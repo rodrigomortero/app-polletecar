@@ -1,87 +1,82 @@
 import React, { useState, useMemo } from "react";
 import "./App.css";
 
-const initialParticipants = ["Ana", "Luis", "Pedro", "Marta"];
+const PARTICIPANTS = ["Ana", "Luis", "Pedro", "Marta"];
 
 export default function App() {
-  const [participants, setParticipants] = useState(initialParticipants);
-  const [todayPassengers, setTodayPassengers] = useState([]);
-  const [debts, setDebts] = useState({}); // { from: { to: number } }
-  const [manualDriver, setManualDriver] = useState(null);
+  const [passengersToday, setPassengersToday] = useState([]);
+  const [debts, setDebts] = useState({});
+  const [manualDriver, setManualDriver] = useState("");
 
   // ---- helpers ----
   const getDebt = (from, to) => debts?.[from]?.[to] || 0;
 
-  const addDebt = (from, to, amount = 1) => {
-    setDebts((prev) => ({
-      ...prev,
-      [from]: {
-        ...prev[from],
-        [to]: (prev[from]?.[to] || 0) + amount,
-      },
-    }));
-  };
+  const addDebt = (from, to) => {
+    setDebts((prev) => {
+      const newDebts = { ...prev };
 
-  const settleDebt = (a, b) => {
-    const ab = getDebt(a, b);
-    const ba = getDebt(b, a);
-    const diff = ab - ba;
+      // inicializar
+      if (!newDebts[from]) newDebts[from] = {};
+      if (!newDebts[to]) newDebts[to] = {};
 
-    if (diff > 0) {
-      addDebt(a, b, -ba);
-      addDebt(b, a, 0);
-    } else if (diff < 0) {
-      addDebt(b, a, -ab);
-      addDebt(a, b, 0);
-    }
+      // sumar deuda
+      newDebts[from][to] = (newDebts[from][to] || 0) + 1;
+
+      // cancelar si existe deuda contraria
+      if (newDebts[to][from]) {
+        const cancel = Math.min(newDebts[from][to], newDebts[to][from]);
+        newDebts[from][to] -= cancel;
+        newDebts[to][from] -= cancel;
+      }
+
+      return newDebts;
+    });
   };
 
   // ---- suggestion logic ----
-  const suggestion = useMemo(() => {
-    if (todayPassengers.length < 2) return null;
+  const suggestedDriver = useMemo(() => {
+    if (passengersToday.length < 2) return "";
 
     let maxDebt = -1;
-    let candidate = null;
+    let candidate = "";
 
-    todayPassengers.forEach((p) => {
-      let debtSum = 0;
-      todayPassengers.forEach((other) => {
+    passengersToday.forEach((p) => {
+      let totalDebt = 0;
+      passengersToday.forEach((other) => {
         if (p !== other) {
-          debtSum += getDebt(p, other);
+          totalDebt += getDebt(p, other);
         }
       });
-      if (debtSum > maxDebt) {
-        maxDebt = debtSum;
+
+      if (totalDebt > maxDebt) {
+        maxDebt = totalDebt;
         candidate = p;
       }
     });
 
     return candidate;
-  }, [todayPassengers, debts]);
+  }, [passengersToday, debts]);
 
-  const finalDriver = manualDriver || suggestion;
+  const finalDriver = manualDriver || suggestedDriver;
 
   // ---- confirm trip ----
   const confirmTrip = () => {
     if (!finalDriver) return;
 
-    todayPassengers.forEach((p) => {
+    passengersToday.forEach((p) => {
       if (p !== finalDriver) {
-        addDebt(p, finalDriver, 1);
-        settleDebt(p, finalDriver);
+        addDebt(p, finalDriver);
       }
     });
 
-    setTodayPassengers([]);
-    setManualDriver(null);
+    setPassengersToday([]);
+    setManualDriver("");
   };
 
-  // ---- UI helpers ----
-  const togglePassenger = (name) => {
-    setTodayPassengers((prev) =>
-      prev.includes(name)
-        ? prev.filter((p) => p !== name)
-        : [...prev, name]
+  // ---- UI ----
+  const togglePassenger = (p) => {
+    setPassengersToday((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
     );
   };
 
@@ -89,14 +84,13 @@ export default function App() {
     <div className="app">
       <h1>🚗 PolleteCar</h1>
 
-      {/* PARTICIPANTS */}
       <section className="card">
         <h2>Participantes habituales</h2>
         <div className="chips">
-          {participants.map((p) => (
+          {PARTICIPANTS.map((p) => (
             <button
               key={p}
-              className={todayPassengers.includes(p) ? "chip active" : "chip"}
+              className={passengersToday.includes(p) ? "chip active" : "chip"}
               onClick={() => togglePassenger(p)}
             >
               {p}
@@ -106,44 +100,35 @@ export default function App() {
         <p className="hint">Selecciona quién va hoy en el coche</p>
       </section>
 
-      {/* SUGGESTION */}
-      {todayPassengers.length >= 2 && (
+      {passengersToday.length >= 2 && (
         <section className="card">
           <h2>Sugerencia de posible conductor</h2>
 
-          <div className="suggestion">
-            {suggestion || "—"}
+          <div className="suggestion">{suggestedDriver}</div>
+
+          <div className="debts-box">
+            <strong>Deudas con los pasajeros de hoy:</strong>
+            <ul>
+              {passengersToday
+                .filter((p) => p !== suggestedDriver)
+                .map((p) => (
+                  <li key={p}>
+                    {suggestedDriver} debe {getDebt(suggestedDriver, p)} a {p}
+                  </li>
+                ))}
+            </ul>
           </div>
 
-          {suggestion && (
-            <div className="debts-box">
-              <strong>Deudas de {suggestion} con los pasajeros de hoy:</strong>
-              <ul>
-                {todayPassengers
-                  .filter((p) => p !== suggestion)
-                  .map((p) => (
-                    <li key={p}>
-                      {suggestion} debe {getDebt(suggestion, p)} a {p}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="manual">
-            <label>Modificar conductor:</label>
-            <select
-              value={finalDriver || ""}
-              onChange={(e) => setManualDriver(e.target.value)}
-            >
-              <option value="">(usar sugerencia)</option>
-              {todayPassengers.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
+          <label>Cambiar conductor manualmente:</label>
+          <select
+            value={manualDriver}
+            onChange={(e) => setManualDriver(e.target.value)}
+          >
+            <option value="">Usar sugerencia</option>
+            {passengersToday.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
 
           <button className="confirm" onClick={confirmTrip}>
             Confirmar viaje
@@ -151,7 +136,6 @@ export default function App() {
         </section>
       )}
 
-      {/* DEBTS TABLE */}
       <section className="card">
         <h2>📊 Deudas entre participantes</h2>
         <table>
@@ -167,7 +151,7 @@ export default function App() {
               Object.entries(tos)
                 .filter(([, v]) => v > 0)
                 .map(([to, v]) => (
-                  <tr key={`${from}-${to}`}>
+                  <tr key={from + to}>
                     <td>{from}</td>
                     <td>{to}</td>
                     <td>{v}</td>
@@ -175,9 +159,7 @@ export default function App() {
                 ))
             )}
             {Object.keys(debts).length === 0 && (
-              <tr>
-                <td colSpan="3">Sin deudas</td>
-              </tr>
+              <tr><td colSpan="3">Sin deudas</td></tr>
             )}
           </tbody>
         </table>
