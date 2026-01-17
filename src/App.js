@@ -1,22 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { auth, provider, db } from "./firebase";
-import {
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged
-} from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   doc,
   addDoc,
-  setDoc,
   updateDoc,
+  setDoc,
   onSnapshot,
   query,
   orderBy,
   limit
 } from "firebase/firestore";
-import "./App.css"; // vamos a usar CSS para estilo atractivo
+import "./App.css";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -28,7 +24,7 @@ function App() {
   const [theme, setTheme] = useState("light");
   const [newParticipant, setNewParticipant] = useState("");
 
-  // LOGIN GOOGLE
+  // LOGIN / LOGOUT
   const login = async () => await signInWithPopup(auth, provider);
   const logout = async () => await signOut(auth);
 
@@ -70,18 +66,24 @@ function App() {
     setTodayPassengers(prev => prev.includes(name) ? prev.filter(x => x!==name) : [...prev, name]);
   };
 
-  // SUGERIR CONDUCTOR
+  // SUGERIR CONDUCTOR: quien más debe a los pasajeros de hoy
   const suggestDriver = () => {
-    if(todayPassengers.length===0) return setSuggestedDriver("");
-    let minDebt = Infinity;
+    if(todayPassengers.length === 0) return setSuggestedDriver("");
+
+    let maxDebtSum = -1;
     let driver = todayPassengers[0];
+
     todayPassengers.forEach(p => {
-      let total = 0;
+      let debtSum = 0;
       todayPassengers.forEach(other => {
-        if(other!==p) total += debts[p]?.[other] || 0;
+        if(other !== p) debtSum += debts[p]?.[other] || 0;
       });
-      if(total < minDebt) { minDebt = total; driver = p; }
+      if(debtSum > maxDebtSum) {
+        maxDebtSum = debtSum;
+        driver = p;
+      }
     });
+
     setSuggestedDriver(driver);
   };
 
@@ -218,7 +220,7 @@ function App() {
         <table>
           <thead>
             <tr>
-              <th>Participante</th>
+              <th>Deudor \ Acreedor</th>
               {participants.map(p => <th key={p.id}>{p.name}</th>)}
             </tr>
           </thead>
