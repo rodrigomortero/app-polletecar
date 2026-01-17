@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import "./App.css"; // <-- Importa el CSS aquí
+import "./App.css";
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import {
@@ -66,25 +66,24 @@ function App() {
     setTodayPassengers(prev => prev.includes(name) ? prev.filter(x => x!==name) : [...prev, name]);
   };
 
-  // SUGERIR CONDUCTOR: equilibrando deudas entre pasajeros del día
+  // SUGERIR CONDUCTOR: el que más debe a los pasajeros de hoy
   const suggestDriver = () => {
-    if(todayPassengers.length === 0) return setSuggestedDriver("");
-
+    if(todayPassengers.length === 0){
+      setSuggestedDriver("");
+      return;
+    }
     let maxDebt = -1;
     let driver = todayPassengers[0];
-
     todayPassengers.forEach(p => {
-      // suma de deudas de p con los demás pasajeros de hoy
       let debtSum = 0;
       todayPassengers.forEach(other => {
-        if(other !== p) debtSum += debts[p]?.[other] || 0;
+        if(other!==p) debtSum += debts[p]?.[other] || 0;
       });
       if(debtSum > maxDebt){
         maxDebt = debtSum;
         driver = p;
       }
     });
-
     setSuggestedDriver(driver);
   };
 
@@ -150,8 +149,8 @@ function App() {
       <header className="header">
         <h1>Coche Compartido</h1>
         <div>
-          <button onClick={logout}>Salir</button>
-          <button onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
+          <button className="btn" onClick={logout}>Salir</button>
+          <button className="btn" onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
         </div>
       </header>
 
@@ -162,13 +161,13 @@ function App() {
           {participants.map(p => (
             <li key={p.id}>
               {p.name} 
-              <button onClick={()=>editParticipant(p.id)}>Editar</button>
-              <button onClick={()=>removeParticipant(p.id)}>Eliminar</button>
+              <button className="small-btn" onClick={()=>editParticipant(p.id)}>Editar</button>
+              <button className="small-btn" onClick={()=>removeParticipant(p.id)}>Eliminar</button>
             </li>
           ))}
         </ul>
-        <input placeholder="Nuevo participante" value={newParticipant} onChange={e=>setNewParticipant(e.target.value)} />
-        <button onClick={addParticipant}>Añadir</button>
+        <input className="input" placeholder="Nuevo participante" value={newParticipant} onChange={e=>setNewParticipant(e.target.value)} />
+        <button className="btn" onClick={addParticipant}>Añadir</button>
       </section>
 
       {/* PASAJEROS DEL DÍA */}
@@ -176,7 +175,7 @@ function App() {
         <h2>Pasajeros del día</h2>
         <div className="checkbox-list">
           {participants.map(p => (
-            <label key={p.id}>
+            <label key={p.id} className="checkbox-label">
               <input type="checkbox" checked={todayPassengers.includes(p.name)} onChange={()=>togglePassenger(p.name)} />
               {p.name}
             </label>
@@ -184,7 +183,7 @@ function App() {
         </div>
 
         <div className="driver-suggestion card">
-          <h3>Conductor sugerido</h3>
+          <h3>Sugerencia de posible conductor</h3>
           <input value={suggestedDriver} onChange={e=>setSuggestedDriver(e.target.value)} />
 
           <h4>Deudas del conductor con pasajeros de hoy</h4>
@@ -196,8 +195,8 @@ function App() {
         </div>
 
         <div className="buttons">
-          <button onClick={confirmTrip}>Confirmar Viaje</button>
-          <button onClick={resetAll}>Reset Total</button>
+          <button className="btn" onClick={confirmTrip}>Confirmar Viaje</button>
+          <button className="btn reset-btn" onClick={resetAll}>Reset Total</button>
         </div>
       </section>
 
@@ -209,7 +208,7 @@ function App() {
             <li key={h.id}>
               {new Date(h.date).toLocaleDateString()} - {h.driver} - {h.passengers.join(", ")}
               {h.modifiedBy ? ` (Modificado por: ${h.modifiedBy})` : ""}
-              {i<5 && <button onClick={()=>editRecentTrip(h.id)}>Editar últimos 5</button>}
+              {i<5 && <button className="small-btn" onClick={()=>editRecentTrip(h.id)}>Editar últimos 5</button>}
             </li>
           ))}
         </ul>
