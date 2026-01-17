@@ -8,11 +8,10 @@ import {
 import {
   collection,
   doc,
-  getDoc,
-  setDoc,
-  onSnapshot,
-  updateDoc,
   addDoc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
   query,
   orderBy,
   limit
@@ -31,79 +30,76 @@ function App() {
   const login = async () => await signInWithPopup(auth, provider);
   const logout = async () => await signOut(auth);
 
-  useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   // CARGAR PARTICIPANTES, DEUDAS E HISTORIAL
   useEffect(() => {
     const unsubP = onSnapshot(collection(db, "participants"), snap => {
-      setParticipants(snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(p=>!p.deleted));
+      setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p=>!p.deleted));
     });
     const unsubD = onSnapshot(doc(db, "debts", "all"), docSnap => {
       if(docSnap.exists()) setDebts(docSnap.data());
     });
-    const q = query(collection(db, "history"), orderBy("date","desc"), limit(20));
-    const unsubH = onSnapshot(q, snap => {
-      setHistory(snap.docs.map(d => ({ id:d.id, ...d.data() })));
-    });
+    const q = query(collection(db, "history"), orderBy("date", "desc"), limit(20));
+    const unsubH = onSnapshot(q, snap => setHistory(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
     return () => { unsubP(); unsubD(); unsubH(); };
   }, []);
 
   // PARTICIPANTES
   const addParticipant = async (name) => { 
     if(!name) return; 
-    await addDoc(collection(db,"participants"),{name}); 
+    await addDoc(collection(db, "participants"), { name }); 
   };
-
-  const editParticipant = async (id) => { 
+  const editParticipant = async (id) => {
     const newName = prompt("Nuevo nombre del participante:");
     if(!newName) return;
-    if(!window.confirm("Confirmas cambiar nombre?")) return; 
-    await updateDoc(doc(db,"participants",id),{name:newName}); 
+    if(!window.confirm("Confirmar cambio de nombre?")) return;
+    await updateDoc(doc(db, "participants", id), { name: newName });
   };
-
-  const removeParticipant = async (id) => { 
-    if(!window.confirm("Confirmas eliminar participante?")) return; 
-    await updateDoc(doc(db,"participants",id),{deleted:true}); 
+  const removeParticipant = async (id) => {
+    if(!window.confirm("Confirmar eliminar participante?")) return;
+    await updateDoc(doc(db, "participants", id), { deleted: true });
   };
 
   // SUGERIR CONDUCTOR
   const suggestDriver = () => {
-    if(todayPassengers.length===0) return;
+    if(todayPassengers.length===0) return setSuggestedDriver("");
     let minDebt = Infinity;
     let driver = todayPassengers[0];
-    todayPassengers.forEach(p=>{
+    todayPassengers.forEach(p => {
       let total=0;
-      todayPassengers.forEach(other=>{
+      todayPassengers.forEach(other => {
         if(other!==p) total += debts[p]?.[other] || 0;
       });
-      if(total<minDebt){ minDebt=total; driver=p; }
+      if(total<minDebt){ minDebt = total; driver=p; }
     });
     setSuggestedDriver(driver);
   };
 
-  useEffect(()=>suggestDriver(), [todayPassengers, debts]);
+  useEffect(() => suggestDriver(), [todayPassengers, debts]);
 
   // CONFIRMAR VIAJE
   const confirmTrip = async () => {
     if(!suggestedDriver) return alert("Selecciona un conductor");
-    const trip = { 
-      date: new Date().toISOString(), 
-      driver: suggestedDriver, 
-      passengers: todayPassengers, 
-      modifiedBy:user.displayName||user.email 
+
+    const trip = {
+      date: new Date().toISOString(),
+      driver: suggestedDriver,
+      passengers: todayPassengers,
+      modifiedBy: user.displayName || user.email
     };
-    await addDoc(collection(db,"history"), trip);
+    await addDoc(collection(db, "history"), trip);
 
     // ACTUALIZAR DEUDAS
-    const newDebts = {...debts};
-    todayPassengers.forEach(p=>{
-      if(p!==suggestedDriver){
-        newDebts[p] = newDebts[p]||{};
+    const newDebts = { ...debts };
+    todayPassengers.forEach(p => {
+      if(p !== suggestedDriver){
+        newDebts[p] = newDebts[p] || {};
         newDebts[p][suggestedDriver] = (newDebts[p][suggestedDriver]||0)+1;
       }
     });
     setDebts(newDebts);
-    await setDoc(doc(db,"debts","all"), newDebts);
+    await setDoc(doc(db, "debts", "all"), newDebts);
 
     setTodayPassengers([]);
     setSuggestedDriver("");
@@ -115,14 +111,14 @@ function App() {
     const newDriver = prompt("Nuevo conductor para este viaje:");
     if(!newDriver) return;
     if(!window.confirm("Confirmar cambio de conductor?")) return;
-    await updateDoc(doc(db,"history",tripId), { driver:newDriver, modifiedBy:user.displayName||user.email });
+    await updateDoc(doc(db, "history", tripId), { driver:newDriver, modifiedBy: user.displayName || user.email });
     alert("Viaje modificado");
   };
 
   // RESET TOTAL
   const resetAll = async () => {
     if(!window.confirm("¿Estás seguro de resetear todo?")) return;
-    if(!window.confirm("Esto borrará TODOS los datos de pasajeros, viajes, historial y deudas. Confirmar de nuevo")) return;
+    if(!window.confirm("Esto borrará TODO: participantes, viajes, historial y deudas. Confirmar de nuevo")) return;
 
     // borrar participantes
     participants.forEach(async(p)=> await updateDoc(doc(db,"participants",p.id), {deleted:true}));
@@ -145,13 +141,13 @@ function App() {
         <button onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
       </header>
 
-      {/* PARTICIPANTES */}
+      {/* PARTICIPANTES HABITUALES */}
       <section>
-        <h2>Participantes</h2>
+        <h2>Participantes Habituales</h2>
         <ul>
-          {participants.map(p=>(
+          {participants.map(p => (
             <li key={p.id}>
-              {p.name} 
+              {p.name}
               <button onClick={()=>editParticipant(p.id)}>Editar</button>
               <button onClick={()=>removeParticipant(p.id)}>Eliminar</button>
             </li>
@@ -159,25 +155,24 @@ function App() {
         </ul>
         <input id="newP" placeholder="Nuevo participante" />
         <button onClick={()=>{
-          const n=document.getElementById("newP").value.trim(); 
-          if(n) { addParticipant(n); document.getElementById("newP").value=""; }
+          const n = document.getElementById("newP").value.trim();
+          if(n){ addParticipant(n); document.getElementById("newP").value=""; }
         }}>Añadir</button>
       </section>
 
-      {/* VIAJE DE HOY */}
+      {/* PASAJEROS DE HOY */}
       <section>
-        <h2>Viaje de hoy</h2>
+        <h2>Pasajeros del día</h2>
         <select multiple value={todayPassengers} onChange={(e)=>setTodayPassengers([...e.target.selectedOptions].map(o=>o.value))}>
           {participants.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
         </select>
+
         <div>
           <h3>Conductor sugerido:</h3>
           <input value={suggestedDriver} onChange={e=>setSuggestedDriver(e.target.value)} />
-        </div>
-        <div>
-          <h4>Deudas del conductor con los pasajeros de hoy:</h4>
+          <h4>Deudas del conductor con pasajeros de hoy:</h4>
           <ul>
-            {todayPassengers.filter(p=>p!==suggestedDriver).map(p=>(
+            {todayPassengers.filter(p=>p!==suggestedDriver).map(p => (
               <li key={p}>{suggestedDriver} debe {debts[suggestedDriver]?.[p]||0} a {p}</li>
             ))}
           </ul>
@@ -200,21 +195,21 @@ function App() {
         </ul>
       </section>
 
-      {/* DEUDAS */}
+      {/* DEUDAS GLOBALES */}
       <section>
-        <h2>Deudas</h2>
+        <h2>Deudas Globales</h2>
         <table>
           <thead>
             <tr>
               <th>Participante</th>
-              {participants.map(p=><th key={p.id}>{p.name}</th>)}
+              {participants.map(p => <th key={p.id}>{p.name}</th>)}
             </tr>
           </thead>
           <tbody>
-            {participants.map(row=>(
+            {participants.map(row => (
               <tr key={row.id}>
                 <td>{row.name}</td>
-                {participants.map(col=>(
+                {participants.map(col => (
                   <td key={col.id} onClick={()=>{
                     const val = prompt(`${row.name} debe a ${col.name}:`, debts[row.name]?.[col.name]||0);
                     if(val!==null && !isNaN(val)){
@@ -223,7 +218,7 @@ function App() {
                       newDebts[row.name] = newDebts[row.name]||{};
                       newDebts[row.name][col.name] = parseInt(val);
                       setDebts(newDebts);
-                      setDoc(doc(db,"debts","all"),newDebts);
+                      setDoc(doc(db,"debts","all"), newDebts);
                       alert(`Deuda actualizada: ${row.name} debe ${val} a ${col.name}`);
                     }
                   }}>
@@ -235,7 +230,6 @@ function App() {
           </tbody>
         </table>
       </section>
-
     </div>
   );
 }
