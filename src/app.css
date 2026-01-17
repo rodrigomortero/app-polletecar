@@ -1,19 +1,88 @@
 body {
-  margin:0; font-family: Arial, sans-serif; background:#f0f2f5;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f4f6fa;
 }
-.app-container.dark { background:#181818; color:white; }
-.app-container.light { background:#f0f2f5; color:black; }
-.header { display:flex; justify-content:space-between; align-items:center; padding:10px 20px; background:#007bff; color:white; border-radius:0 0 8px 8px;}
-.header button { margin-left:10px; padding:5px 10px; cursor:pointer;}
-.card { background:white; padding:15px; margin:15px 0; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}
-.app-container.dark .card { background:#242424; color:white; }
-.checkbox-list label { display:block; margin-bottom:5px; cursor:pointer;}
-.driver-suggestion { background:#e8f0fe; padding:10px; margin-top:10px; border-radius:6px; }
-.app-container.dark .driver-suggestion { background:#333; }
-.buttons button { margin-right:10px; padding:8px 12px; cursor:pointer; margin-top:10px; }
-table { width:100%; border-collapse: collapse; margin-top:10px; }
-th, td { border:1px solid #ccc; padding:5px; text-align:center; }
-.app-container.dark th, .app-container.dark td { border-color:#555; }
-th { background:#007bff; color:white; }
-.app-container.dark th { background:#0d6efd; }
-.login-btn { padding:10px 15px; cursor:pointer; margin:20px; font-size:16px;}
+
+.app {
+  max-width: 900px;
+  margin: auto;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip {
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+}
+
+.chip.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.hint {
+  font-size: 0.9em;
+  color: #666;
+}
+
+.suggestion {
+  font-size: 1.6em;
+  font-weight: bold;
+  margin: 10px 0;
+}
+
+.debts-box {
+  background: #f1f3f7;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.manual {
+  margin-bottom: 10px;
+}
+
+.confirm {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.confirm:hover {
+  background: #218838;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
