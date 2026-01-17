@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import "./App.css"; // <-- Importa el CSS aquí
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import {
@@ -12,7 +13,6 @@ import {
   orderBy,
   limit
 } from "firebase/firestore";
-import "./App.css";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -66,20 +66,21 @@ function App() {
     setTodayPassengers(prev => prev.includes(name) ? prev.filter(x => x!==name) : [...prev, name]);
   };
 
-  // SUGERIR CONDUCTOR: quien más debe a los pasajeros de hoy
+  // SUGERIR CONDUCTOR: equilibrando deudas entre pasajeros del día
   const suggestDriver = () => {
     if(todayPassengers.length === 0) return setSuggestedDriver("");
 
-    let maxDebtSum = -1;
+    let maxDebt = -1;
     let driver = todayPassengers[0];
 
     todayPassengers.forEach(p => {
+      // suma de deudas de p con los demás pasajeros de hoy
       let debtSum = 0;
       todayPassengers.forEach(other => {
         if(other !== p) debtSum += debts[p]?.[other] || 0;
       });
-      if(debtSum > maxDebtSum) {
-        maxDebtSum = debtSum;
+      if(debtSum > maxDebt){
+        maxDebt = debtSum;
         driver = p;
       }
     });
