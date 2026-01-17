@@ -1,256 +1,187 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import "./App.css";
-import { auth, provider, db } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
-  setDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  limit
-} from "firebase/firestore";
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [participants, setParticipants] = useState([]);
+const initialParticipants = ["Ana", "Luis", "Pedro", "Marta"];
+
+export default function App() {
+  const [participants, setParticipants] = useState(initialParticipants);
   const [todayPassengers, setTodayPassengers] = useState([]);
-  const [suggestedDriver, setSuggestedDriver] = useState("");
-  const [debts, setDebts] = useState({});
-  const [history, setHistory] = useState([]);
-  const [theme, setTheme] = useState("light");
-  const [newParticipant, setNewParticipant] = useState("");
+  const [debts, setDebts] = useState({}); // { from: { to: number } }
+  const [manualDriver, setManualDriver] = useState(null);
 
-  // LOGIN / LOGOUT
-  const login = async () => await signInWithPopup(auth, provider);
-  const logout = async () => await signOut(auth);
+  // ---- helpers ----
+  const getDebt = (from, to) => debts?.[from]?.[to] || 0;
 
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
-
-  // CARGAR PARTICIPANTES, DEUDAS E HISTORIAL
-  useEffect(() => {
-    const unsubP = onSnapshot(collection(db, "participants"), snap => {
-      setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p=>!p.deleted));
-    });
-    const unsubD = onSnapshot(doc(db, "debts", "all"), docSnap => {
-      if(docSnap.exists()) setDebts(docSnap.data());
-    });
-    const q = query(collection(db, "history"), orderBy("date", "desc"), limit(20));
-    const unsubH = onSnapshot(q, snap => setHistory(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
-    return () => { unsubP(); unsubD(); unsubH(); };
-  }, []);
-
-  // PARTICIPANTES
-  const addParticipant = async () => { 
-    const name = newParticipant.trim();
-    if(!name) return; 
-    await addDoc(collection(db, "participants"), { name }); 
-    setNewParticipant("");
-  };
-  const editParticipant = async (id) => {
-    const newName = prompt("Nuevo nombre del participante:");
-    if(!newName) return;
-    if(!window.confirm("Confirmar cambio de nombre?")) return;
-    await updateDoc(doc(db, "participants", id), { name: newName });
-  };
-  const removeParticipant = async (id) => {
-    if(!window.confirm("Confirmar eliminar participante?")) return;
-    await updateDoc(doc(db, "participants", id), { deleted: true });
+  const addDebt = (from, to, amount = 1) => {
+    setDebts((prev) => ({
+      ...prev,
+      [from]: {
+        ...prev[from],
+        [to]: (prev[from]?.[to] || 0) + amount,
+      },
+    }));
   };
 
-  // SELECCIÓN DE PASAJEROS DEL DÍA
-  const togglePassenger = (name) => {
-    setTodayPassengers(prev => prev.includes(name) ? prev.filter(x => x!==name) : [...prev, name]);
-  };
+  const settleDebt = (a, b) => {
+    const ab = getDebt(a, b);
+    const ba = getDebt(b, a);
+    const diff = ab - ba;
 
-  // SUGERIR CONDUCTOR: el que más debe a los pasajeros de hoy
-  const suggestDriver = () => {
-    if(todayPassengers.length === 0){
-      setSuggestedDriver("");
-      return;
+    if (diff > 0) {
+      addDebt(a, b, -ba);
+      addDebt(b, a, 0);
+    } else if (diff < 0) {
+      addDebt(b, a, -ab);
+      addDebt(a, b, 0);
     }
+  };
+
+  // ---- suggestion logic ----
+  const suggestion = useMemo(() => {
+    if (todayPassengers.length < 2) return null;
+
     let maxDebt = -1;
-    let driver = todayPassengers[0];
-    todayPassengers.forEach(p => {
+    let candidate = null;
+
+    todayPassengers.forEach((p) => {
       let debtSum = 0;
-      todayPassengers.forEach(other => {
-        if(other!==p) debtSum += debts[p]?.[other] || 0;
+      todayPassengers.forEach((other) => {
+        if (p !== other) {
+          debtSum += getDebt(p, other);
+        }
       });
-      if(debtSum > maxDebt){
+      if (debtSum > maxDebt) {
         maxDebt = debtSum;
-        driver = p;
+        candidate = p;
       }
     });
-    setSuggestedDriver(driver);
-  };
 
-  useEffect(() => suggestDriver(), [todayPassengers, debts]);
+    return candidate;
+  }, [todayPassengers, debts]);
 
-  // CONFIRMAR VIAJE
-  const confirmTrip = async () => {
-    if(!suggestedDriver) return alert("Selecciona un conductor");
-    if(todayPassengers.length===0) return alert("Selecciona al menos un pasajero");
+  const finalDriver = manualDriver || suggestion;
 
-    const trip = {
-      date: new Date().toISOString(),
-      driver: suggestedDriver,
-      passengers: todayPassengers,
-      modifiedBy: user.displayName || user.email
-    };
-    await addDoc(collection(db, "history"), trip);
+  // ---- confirm trip ----
+  const confirmTrip = () => {
+    if (!finalDriver) return;
 
-    // ACTUALIZAR DEUDAS
-    const newDebts = {...debts};
-    todayPassengers.forEach(p => {
-      if(p!==suggestedDriver){
-        newDebts[p] = newDebts[p] || {};
-        newDebts[p][suggestedDriver] = (newDebts[p][suggestedDriver] || 0) + 1;
+    todayPassengers.forEach((p) => {
+      if (p !== finalDriver) {
+        addDebt(p, finalDriver, 1);
+        settleDebt(p, finalDriver);
       }
     });
-    setDebts(newDebts);
-    await setDoc(doc(db,"debts","all"), newDebts);
 
     setTodayPassengers([]);
-    setSuggestedDriver("");
-    alert("Viaje confirmado");
+    setManualDriver(null);
   };
 
-  // EDITAR ÚLTIMOS 5 VIAJES
-  const editRecentTrip = async (tripId) => {
-    const newDriver = prompt("Nuevo conductor para este viaje:");
-    if(!newDriver) return;
-    if(!window.confirm("Confirmar cambio de conductor?")) return;
-    await updateDoc(doc(db, "history", tripId), { driver:newDriver, modifiedBy: user.displayName || user.email });
-    alert("Viaje modificado");
+  // ---- UI helpers ----
+  const togglePassenger = (name) => {
+    setTodayPassengers((prev) =>
+      prev.includes(name)
+        ? prev.filter((p) => p !== name)
+        : [...prev, name]
+    );
   };
-
-  // RESET TOTAL
-  const resetAll = async () => {
-    if(!window.confirm("¿Estás seguro de resetear todo?")) return;
-    if(!window.confirm("Esto borrará TODO: participantes, viajes, historial y deudas. Confirmar de nuevo")) return;
-
-    participants.forEach(async(p)=> await updateDoc(doc(db,"participants",p.id), {deleted:true}));
-    await setDoc(doc(db,"debts","all"), {});
-    history.forEach(async(h)=> await updateDoc(doc(db,"history",h.id), {deleted:true}));
-    setTodayPassengers([]);
-    setSuggestedDriver("");
-    alert("Todo reseteado");
-  };
-
-  const toggleTheme = () => setTheme(theme==="light"?"dark":"light");
-
-  if(!user) return <button className="login-btn" onClick={login}>Login con Google</button>;
 
   return (
-    <div className={`app-container ${theme}`}>
-      <header className="header">
-        <h1>Coche Compartido</h1>
-        <div>
-          <button className="btn" onClick={logout}>Salir</button>
-          <button className="btn" onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
-        </div>
-      </header>
+    <div className="app">
+      <h1>🚗 PolleteCar</h1>
 
-      {/* PARTICIPANTES HABITUALES */}
+      {/* PARTICIPANTS */}
       <section className="card">
-        <h2>Participantes Habituales</h2>
-        <ul>
-          {participants.map(p => (
-            <li key={p.id}>
-              {p.name} 
-              <button className="small-btn" onClick={()=>editParticipant(p.id)}>Editar</button>
-              <button className="small-btn" onClick={()=>removeParticipant(p.id)}>Eliminar</button>
-            </li>
-          ))}
-        </ul>
-        <input className="input" placeholder="Nuevo participante" value={newParticipant} onChange={e=>setNewParticipant(e.target.value)} />
-        <button className="btn" onClick={addParticipant}>Añadir</button>
-      </section>
-
-      {/* PASAJEROS DEL DÍA */}
-      <section className="card">
-        <h2>Pasajeros del día</h2>
-        <div className="checkbox-list">
-          {participants.map(p => (
-            <label key={p.id} className="checkbox-label">
-              <input type="checkbox" checked={todayPassengers.includes(p.name)} onChange={()=>togglePassenger(p.name)} />
-              {p.name}
-            </label>
+        <h2>Participantes habituales</h2>
+        <div className="chips">
+          {participants.map((p) => (
+            <button
+              key={p}
+              className={todayPassengers.includes(p) ? "chip active" : "chip"}
+              onClick={() => togglePassenger(p)}
+            >
+              {p}
+            </button>
           ))}
         </div>
-
-        <div className="driver-suggestion card">
-          <h3>Sugerencia de posible conductor</h3>
-          <input value={suggestedDriver} onChange={e=>setSuggestedDriver(e.target.value)} />
-
-          <h4>Deudas del conductor con pasajeros de hoy</h4>
-          <ul>
-            {todayPassengers.filter(p => p!==suggestedDriver).map(p => (
-              <li key={p}>{suggestedDriver} debe {debts[suggestedDriver]?.[p] || 0} a {p}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="buttons">
-          <button className="btn" onClick={confirmTrip}>Confirmar Viaje</button>
-          <button className="btn reset-btn" onClick={resetAll}>Reset Total</button>
-        </div>
+        <p className="hint">Selecciona quién va hoy en el coche</p>
       </section>
 
-      {/* HISTORIAL */}
-      <section className="card">
-        <h2>Historial (últimos 20 viajes)</h2>
-        <ul>
-          {history.filter(h=>!h.deleted).slice(0,20).map((h,i)=>(
-            <li key={h.id}>
-              {new Date(h.date).toLocaleDateString()} - {h.driver} - {h.passengers.join(", ")}
-              {h.modifiedBy ? ` (Modificado por: ${h.modifiedBy})` : ""}
-              {i<5 && <button className="small-btn" onClick={()=>editRecentTrip(h.id)}>Editar últimos 5</button>}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* SUGGESTION */}
+      {todayPassengers.length >= 2 && (
+        <section className="card">
+          <h2>Sugerencia de posible conductor</h2>
 
-      {/* DEUDAS GLOBALES */}
+          <div className="suggestion">
+            {suggestion || "—"}
+          </div>
+
+          {suggestion && (
+            <div className="debts-box">
+              <strong>Deudas de {suggestion} con los pasajeros de hoy:</strong>
+              <ul>
+                {todayPassengers
+                  .filter((p) => p !== suggestion)
+                  .map((p) => (
+                    <li key={p}>
+                      {suggestion} debe {getDebt(suggestion, p)} a {p}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="manual">
+            <label>Modificar conductor:</label>
+            <select
+              value={finalDriver || ""}
+              onChange={(e) => setManualDriver(e.target.value)}
+            >
+              <option value="">(usar sugerencia)</option>
+              {todayPassengers.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button className="confirm" onClick={confirmTrip}>
+            Confirmar viaje
+          </button>
+        </section>
+      )}
+
+      {/* DEBTS TABLE */}
       <section className="card">
-        <h2>Deudas Globales</h2>
+        <h2>📊 Deudas entre participantes</h2>
         <table>
           <thead>
             <tr>
-              <th>Deudor \ Acreedor</th>
-              {participants.map(p => <th key={p.id}>{p.name}</th>)}
+              <th>Quién debe</th>
+              <th>A quién</th>
+              <th>Viajes</th>
             </tr>
           </thead>
           <tbody>
-            {participants.map(row => (
-              <tr key={row.id}>
-                <td>{row.name}</td>
-                {participants.map(col => (
-                  <td key={col.id} onClick={()=>{
-                    const val = prompt(`${row.name} debe a ${col.name}:`, debts[row.name]?.[col.name]||0);
-                    if(val!==null && !isNaN(val)){
-                      if(!window.confirm("Confirmar cambio de deuda?")) return;
-                      const newDebts = {...debts};
-                      newDebts[row.name] = newDebts[row.name]||{};
-                      newDebts[row.name][col.name] = parseInt(val);
-                      setDebts(newDebts);
-                      setDoc(doc(db,"debts","all"), newDebts);
-                      alert(`Deuda actualizada: ${row.name} debe ${val} a ${col.name}`);
-                    }
-                  }}>
-                    {debts[row.name]?.[col.name] || 0}
-                  </td>
-                ))}
+            {Object.entries(debts).flatMap(([from, tos]) =>
+              Object.entries(tos)
+                .filter(([, v]) => v > 0)
+                .map(([to, v]) => (
+                  <tr key={`${from}-${to}`}>
+                    <td>{from}</td>
+                    <td>{to}</td>
+                    <td>{v}</td>
+                  </tr>
+                ))
+            )}
+            {Object.keys(debts).length === 0 && (
+              <tr>
+                <td colSpan="3">Sin deudas</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </section>
     </div>
   );
 }
-
-export default App;
