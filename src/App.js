@@ -1,88 +1,100 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import "./App.css";
 
 function App() {
-  // Participantes habituales
   const [participantes, setParticipantes] = useState([]);
   const [nuevoNombre, setNuevoNombre] = useState("");
 
-  // Viaje de hoy
   const [hoy, setHoy] = useState([]);
-  const [conductorFinal, setConductorFinal] = useState(null);
-
-  // Deudas: { A: { B: n } }
   const [deudas, setDeudas] = useState({});
+  const [historial, setHistorial] = useState([]);
+
+  const [resetPaso, setResetPaso] = useState(0);
 
   /* ---------------- PARTICIPANTES ---------------- */
 
   const añadirParticipante = () => {
     if (!nuevoNombre.trim()) return;
     if (participantes.includes(nuevoNombre)) return;
-
     setParticipantes([...participantes, nuevoNombre]);
     setNuevoNombre("");
   };
 
-  const eliminarParticipante = (nombre) => {
-    setParticipantes(participantes.filter(p => p !== nombre));
-    setHoy(hoy.filter(p => p !== nombre));
+  const eliminarParticipante = (p) => {
+    setParticipantes(participantes.filter(x => x !== p));
+    setHoy(hoy.filter(x => x !== p));
   };
 
   /* ---------------- VIAJE HOY ---------------- */
 
-  const toggleHoy = (nombre) => {
+  const toggleHoy = (p) => {
     setHoy(
-      hoy.includes(nombre)
-        ? hoy.filter(p => p !== nombre)
-        : [...hoy, nombre]
+      hoy.includes(p)
+        ? hoy.filter(x => x !== p)
+        : [...hoy, p]
     );
   };
 
-  /* ---------------- SUGERENCIA CONDUCTOR ---------------- */
+  /* ---------------- SUGERENCIA ---------------- */
 
   const sugerirConductor = () => {
-    if (hoy.length === 0) return null;
-
-    let peor = hoy[0];
-    let maxDeuda = -1;
+    let max = -1;
+    let elegido = null;
 
     hoy.forEach(p => {
-      let deudaTotal = 0;
+      let total = 0;
       hoy.forEach(o => {
-        if (o !== p) {
-          deudaTotal += deudas[p]?.[o] || 0;
-        }
+        if (o !== p) total += deudas[p]?.[o] || 0;
       });
-
-      if (deudaTotal > maxDeuda) {
-        maxDeuda = deudaTotal;
-        peor = p;
+      if (total > max) {
+        max = total;
+        elegido = p;
       }
     });
 
-    return peor;
+    return elegido;
   };
 
   const sugerido = sugerirConductor();
 
   /* ---------------- CONFIRMAR VIAJE ---------------- */
 
-  const confirmarViaje = () => {
-    if (!conductorFinal || hoy.length < 2) return;
+  const confirmarViaje = (conductor = sugerido) => {
+    if (!conductor || hoy.length < 2) return;
 
-    const nuevas = { ...deudas };
+    const nuevas = JSON.parse(JSON.stringify(deudas));
 
     hoy.forEach(p => {
-      if (p !== conductorFinal) {
-        if (!nuevas[p]) nuevas[p] = {};
-        nuevas[p][conductorFinal] =
-          (nuevas[p][conductorFinal] || 0) + 1;
+      if (p !== conductor) {
+        nuevas[p] = nuevas[p] || {};
+        nuevas[p][conductor] = (nuevas[p][conductor] || 0) + 1;
       }
     });
 
+    const viaje = {
+      fecha: new Date().toLocaleString(),
+      pasajeros: [...hoy],
+      conductor,
+      accion: "Viaje confirmado"
+    };
+
     setDeudas(nuevas);
+    setHistorial([viaje, ...historial].slice(0, 20));
     setHoy([]);
-    setConductorFinal(null);
+  };
+
+  /* ---------------- RESET TOTAL ---------------- */
+
+  const resetTotal = () => {
+    if (resetPaso === 0) {
+      setResetPaso(1);
+      return;
+    }
+    setParticipantes([]);
+    setHoy([]);
+    setDeudas({});
+    setHistorial([]);
+    setResetPaso(0);
   };
 
   /* ---------------- RENDER ---------------- */
@@ -93,15 +105,13 @@ function App() {
 
       {/* PARTICIPANTES */}
       <section>
-        <h2>Participantes habituales</h2>
-        <div className="fila">
-          <input
-            value={nuevoNombre}
-            onChange={e => setNuevoNombre(e.target.value)}
-            placeholder="Nombre"
-          />
-          <button onClick={añadirParticipante}>Añadir</button>
-        </div>
+        <h2>Participantes</h2>
+        <input
+          value={nuevoNombre}
+          onChange={e => setNuevoNombre(e.target.value)}
+          placeholder="Nombre"
+        />
+        <button onClick={añadirParticipante}>Añadir</button>
 
         <ul>
           {participantes.map(p => (
@@ -113,11 +123,11 @@ function App() {
         </ul>
       </section>
 
-      {/* VIAJE DE HOY */}
+      {/* VIAJE */}
       <section>
-        <h2>¿Quién va hoy en el coche?</h2>
+        <h2>¿Quién va hoy?</h2>
         {participantes.map(p => (
-          <label key={p} className="check">
+          <label key={p}>
             <input
               type="checkbox"
               checked={hoy.includes(p)}
@@ -134,28 +144,16 @@ function App() {
           <h2>Sugerencia de posible conductor</h2>
           <strong>{sugerido}</strong>
 
-          <p>Deudas de {sugerido} con los pasajeros de hoy:</p>
+          <p>Deudas del conductor sugerido:</p>
           <ul>
-            {hoy
-              .filter(p => p !== sugerido)
-              .map(p => (
-                <li key={p}>
-                  {sugerido} debe {deudas[sugerido]?.[p] || 0} a {p}
-                </li>
-              ))}
+            {hoy.filter(p => p !== sugerido).map(p => (
+              <li key={p}>
+                {sugerido} debe {deudas[sugerido]?.[p] || 0} a {p}
+              </li>
+            ))}
           </ul>
 
-          <select
-            value={conductorFinal || ""}
-            onChange={e => setConductorFinal(e.target.value)}
-          >
-            <option value="">Elegir conductor final</option>
-            {hoy.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-
-          <button onClick={confirmarViaje}>
+          <button onClick={() => confirmarViaje()}>
             Confirmar viaje
           </button>
         </section>
@@ -163,21 +161,47 @@ function App() {
 
       {/* DEUDAS */}
       <section>
-        <h2>Deudas entre participantes</h2>
-        {participantes.map(a => (
-          <div key={a} className="deuda">
-            <strong>{a}</strong>
-            <ul>
-              {participantes
-                .filter(b => b !== a)
-                .map(b => (
-                  <li key={b}>
-                    debe {deudas[a]?.[b] || 0} a {b}
-                  </li>
+        <h2>Deudas</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Debe \ A</th>
+              {participantes.map(p => <th key={p}>{p}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {participantes.map(a => (
+              <tr key={a}>
+                <td><strong>{a}</strong></td>
+                {participantes.map(b => (
+                  <td key={b}>
+                    {a === b ? "—" : (deudas[a]?.[b] || 0)}
+                  </td>
                 ))}
-            </ul>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* HISTORIAL */}
+      <section>
+        <h2>Historial (últimos 20)</h2>
+        {historial.map((v, i) => (
+          <div key={i} className="historial">
+            <strong>{v.fecha}</strong><br />
+            Pasajeros: {v.pasajeros.join(", ")}<br />
+            Conductor: {v.conductor}<br />
+            {v.accion}
           </div>
         ))}
+      </section>
+
+      {/* RESET */}
+      <section>
+        <button className="reset" onClick={resetTotal}>
+          {resetPaso === 0 ? "RESET TOTAL" : "¿SEGURO? CONFIRMAR RESET"}
+        </button>
       </section>
     </div>
   );
