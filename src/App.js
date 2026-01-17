@@ -49,11 +49,18 @@ function App() {
   }, []);
 
   // PARTICIPANTES
-  const addParticipant = async (name) => { if(!name) return; await addDoc(collection(db,"participants"),{name}); };
-  const editParticipant = async (id,newName) => { 
+  const addParticipant = async (name) => { 
+    if(!name) return; 
+    await addDoc(collection(db,"participants"),{name}); 
+  };
+
+  const editParticipant = async (id) => { 
+    const newName = prompt("Nuevo nombre del participante:");
+    if(!newName) return;
     if(!window.confirm("Confirmas cambiar nombre?")) return; 
     await updateDoc(doc(db,"participants",id),{name:newName}); 
   };
+
   const removeParticipant = async (id) => { 
     if(!window.confirm("Confirmas eliminar participante?")) return; 
     await updateDoc(doc(db,"participants",id),{deleted:true}); 
@@ -99,6 +106,7 @@ function App() {
     await setDoc(doc(db,"debts","all"), newDebts);
 
     setTodayPassengers([]);
+    setSuggestedDriver("");
     alert("Viaje confirmado");
   };
 
@@ -111,12 +119,17 @@ function App() {
     alert("Viaje modificado");
   };
 
-  // RESET SEGURO
+  // RESET TOTAL
   const resetAll = async () => {
     if(!window.confirm("¿Estás seguro de resetear todo?")) return;
-    if(!window.confirm("Esto borrará todo historial y deudas. Confirmar de nuevo")) return;
+    if(!window.confirm("Esto borrará TODOS los datos de pasajeros, viajes, historial y deudas. Confirmar de nuevo")) return;
+
+    // borrar participantes
+    participants.forEach(async(p)=> await updateDoc(doc(db,"participants",p.id), {deleted:true}));
+    // borrar deudas
     await setDoc(doc(db,"debts","all"), {});
-    history.forEach(async(h)=>await updateDoc(doc(db,"history",h.id),{deleted:true}));
+    // borrar historial
+    history.forEach(async(h)=> await updateDoc(doc(db,"history",h.id), {deleted:true}));
     alert("Todo reseteado");
   };
 
@@ -139,15 +152,15 @@ function App() {
           {participants.map(p=>(
             <li key={p.id}>
               {p.name} 
-              <button onClick={()=>editParticipant(p.id,p.name)}>Editar</button>
+              <button onClick={()=>editParticipant(p.id)}>Editar</button>
               <button onClick={()=>removeParticipant(p.id)}>Eliminar</button>
             </li>
           ))}
         </ul>
         <input id="newP" placeholder="Nuevo participante" />
         <button onClick={()=>{
-          const n=document.getElementById("newP").value; 
-          if(n) addParticipant(n);
+          const n=document.getElementById("newP").value.trim(); 
+          if(n) { addParticipant(n); document.getElementById("newP").value=""; }
         }}>Añadir</button>
       </section>
 
@@ -170,14 +183,14 @@ function App() {
           </ul>
         </div>
         <button onClick={confirmTrip}>Confirmar Viaje</button>
-        <button onClick={resetAll}>Reset Seguro</button>
+        <button onClick={resetAll}>Reset Total</button>
       </section>
 
       {/* HISTORIAL */}
       <section>
         <h2>Historial (últimos 20 viajes)</h2>
         <ul>
-          {history.slice(0,20).map((h,i)=>(
+          {history.filter(h=>!h.deleted).slice(0,20).map((h,i)=>(
             <li key={h.id}>
               {new Date(h.date).toLocaleDateString()} - {h.driver} - {h.passengers.join(", ")}
               {h.modifiedBy ? `(Modificado por: ${h.modifiedBy})` : ""}
