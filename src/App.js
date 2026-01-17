@@ -61,17 +61,22 @@ function App() {
     await updateDoc(doc(db, "participants", id), { deleted: true });
   };
 
+  // SELECCIÓN DE PASAJEROS DE HOY
+  const togglePassenger = (name) => {
+    setTodayPassengers(prev => prev.includes(name) ? prev.filter(p => p!==name) : [...prev, name]);
+  };
+
   // SUGERIR CONDUCTOR
   const suggestDriver = () => {
     if(todayPassengers.length===0) return setSuggestedDriver("");
     let minDebt = Infinity;
     let driver = todayPassengers[0];
     todayPassengers.forEach(p => {
-      let total=0;
+      let total = 0;
       todayPassengers.forEach(other => {
         if(other!==p) total += debts[p]?.[other] || 0;
       });
-      if(total<minDebt){ minDebt = total; driver=p; }
+      if(total < minDebt) { minDebt = total; driver = p; }
     });
     setSuggestedDriver(driver);
   };
@@ -81,6 +86,7 @@ function App() {
   // CONFIRMAR VIAJE
   const confirmTrip = async () => {
     if(!suggestedDriver) return alert("Selecciona un conductor");
+    if(todayPassengers.length===0) return alert("Selecciona al menos un pasajero");
 
     const trip = {
       date: new Date().toISOString(),
@@ -91,15 +97,15 @@ function App() {
     await addDoc(collection(db, "history"), trip);
 
     // ACTUALIZAR DEUDAS
-    const newDebts = { ...debts };
+    const newDebts = {...debts};
     todayPassengers.forEach(p => {
-      if(p !== suggestedDriver){
+      if(p!==suggestedDriver){
         newDebts[p] = newDebts[p] || {};
-        newDebts[p][suggestedDriver] = (newDebts[p][suggestedDriver]||0)+1;
+        newDebts[p][suggestedDriver] = (newDebts[p][suggestedDriver] || 0) + 1;
       }
     });
     setDebts(newDebts);
-    await setDoc(doc(db, "debts", "all"), newDebts);
+    await setDoc(doc(db,"debts","all"), newDebts);
 
     setTodayPassengers([]);
     setSuggestedDriver("");
@@ -120,16 +126,13 @@ function App() {
     if(!window.confirm("¿Estás seguro de resetear todo?")) return;
     if(!window.confirm("Esto borrará TODO: participantes, viajes, historial y deudas. Confirmar de nuevo")) return;
 
-    // borrar participantes
     participants.forEach(async(p)=> await updateDoc(doc(db,"participants",p.id), {deleted:true}));
-    // borrar deudas
     await setDoc(doc(db,"debts","all"), {});
-    // borrar historial
     history.forEach(async(h)=> await updateDoc(doc(db,"history",h.id), {deleted:true}));
     alert("Todo reseteado");
   };
 
-  const toggleTheme = ()=>setTheme(theme==="light"?"dark":"light");
+  const toggleTheme = () => setTheme(theme==="light"?"dark":"light");
 
   if(!user) return <button onClick={login}>Login con Google</button>;
 
@@ -147,7 +150,7 @@ function App() {
         <ul>
           {participants.map(p => (
             <li key={p.id}>
-              {p.name}
+              {p.name} 
               <button onClick={()=>editParticipant(p.id)}>Editar</button>
               <button onClick={()=>removeParticipant(p.id)}>Eliminar</button>
             </li>
@@ -160,23 +163,34 @@ function App() {
         }}>Añadir</button>
       </section>
 
-      {/* PASAJEROS DE HOY */}
+      {/* PASAJEROS DEL DÍA */}
       <section>
         <h2>Pasajeros del día</h2>
-        <select multiple value={todayPassengers} onChange={(e)=>setTodayPassengers([...e.target.selectedOptions].map(o=>o.value))}>
-          {participants.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-        </select>
+        {participants.map(p => (
+          <div key={p.id}>
+            <label>
+              <input
+                type="checkbox"
+                checked={todayPassengers.includes(p.name)}
+                onChange={() => togglePassenger(p.name)}
+              />
+              {p.name}
+            </label>
+          </div>
+        ))}
 
         <div>
           <h3>Conductor sugerido:</h3>
           <input value={suggestedDriver} onChange={e=>setSuggestedDriver(e.target.value)} />
+
           <h4>Deudas del conductor con pasajeros de hoy:</h4>
           <ul>
-            {todayPassengers.filter(p=>p!==suggestedDriver).map(p => (
-              <li key={p}>{suggestedDriver} debe {debts[suggestedDriver]?.[p]||0} a {p}</li>
+            {todayPassengers.filter(p => p!==suggestedDriver).map(p => (
+              <li key={p}>{suggestedDriver} debe {debts[suggestedDriver]?.[p] || 0} a {p}</li>
             ))}
           </ul>
         </div>
+
         <button onClick={confirmTrip}>Confirmar Viaje</button>
         <button onClick={resetAll}>Reset Total</button>
       </section>
@@ -222,7 +236,7 @@ function App() {
                       alert(`Deuda actualizada: ${row.name} debe ${val} a ${col.name}`);
                     }
                   }}>
-                    {debts[row.name]?.[col.name]||0}
+                    {debts[row.name]?.[col.name] || 0}
                   </td>
                 ))}
               </tr>
