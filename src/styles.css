@@ -1,4 +1,27 @@
-.App {
+body, html, div {
   font-family: sans-serif;
-  text-align: center;
+  padding: 0;
+  margin: 0;
+}
+
+.light {
+  background-color: #f2f2f2;
+  color: #000;
+}
+
+.dark {
+  background-color: #222;
+  color: #fff;
+}
+
+button {
+  margin: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+section {
+  margin: 20px;
+  padding: 10px;
+  border: 1px solid #ccc;
 }
