@@ -16,6 +16,7 @@ import {
   orderBy,
   limit
 } from "firebase/firestore";
+import "./App.css"; // vamos a usar CSS para estilo atractivo
 
 function App() {
   const [user, setUser] = useState(null);
@@ -25,6 +26,7 @@ function App() {
   const [debts, setDebts] = useState({});
   const [history, setHistory] = useState([]);
   const [theme, setTheme] = useState("light");
+  const [newParticipant, setNewParticipant] = useState("");
 
   // LOGIN GOOGLE
   const login = async () => await signInWithPopup(auth, provider);
@@ -46,9 +48,11 @@ function App() {
   }, []);
 
   // PARTICIPANTES
-  const addParticipant = async (name) => { 
+  const addParticipant = async () => { 
+    const name = newParticipant.trim();
     if(!name) return; 
     await addDoc(collection(db, "participants"), { name }); 
+    setNewParticipant("");
   };
   const editParticipant = async (id) => {
     const newName = prompt("Nuevo nombre del participante:");
@@ -61,9 +65,9 @@ function App() {
     await updateDoc(doc(db, "participants", id), { deleted: true });
   };
 
-  // SELECCIÓN DE PASAJEROS DE HOY
+  // SELECCIÓN DE PASAJEROS DEL DÍA
   const togglePassenger = (name) => {
-    setTodayPassengers(prev => prev.includes(name) ? prev.filter(p => p!==name) : [...prev, name]);
+    setTodayPassengers(prev => prev.includes(name) ? prev.filter(x => x!==name) : [...prev, name]);
   };
 
   // SUGERIR CONDUCTOR
@@ -129,23 +133,27 @@ function App() {
     participants.forEach(async(p)=> await updateDoc(doc(db,"participants",p.id), {deleted:true}));
     await setDoc(doc(db,"debts","all"), {});
     history.forEach(async(h)=> await updateDoc(doc(db,"history",h.id), {deleted:true}));
+    setTodayPassengers([]);
+    setSuggestedDriver("");
     alert("Todo reseteado");
   };
 
   const toggleTheme = () => setTheme(theme==="light"?"dark":"light");
 
-  if(!user) return <button onClick={login}>Login con Google</button>;
+  if(!user) return <button className="login-btn" onClick={login}>Login con Google</button>;
 
   return (
-    <div className={theme}>
-      <header>
+    <div className={`app-container ${theme}`}>
+      <header className="header">
         <h1>Coche Compartido</h1>
-        <button onClick={logout}>Salir</button>
-        <button onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
+        <div>
+          <button onClick={logout}>Salir</button>
+          <button onClick={toggleTheme}>Modo {theme==="light"?"Oscuro":"Claro"}</button>
+        </div>
       </header>
 
       {/* PARTICIPANTES HABITUALES */}
-      <section>
+      <section className="card">
         <h2>Participantes Habituales</h2>
         <ul>
           {participants.map(p => (
@@ -156,34 +164,27 @@ function App() {
             </li>
           ))}
         </ul>
-        <input id="newP" placeholder="Nuevo participante" />
-        <button onClick={()=>{
-          const n = document.getElementById("newP").value.trim();
-          if(n){ addParticipant(n); document.getElementById("newP").value=""; }
-        }}>Añadir</button>
+        <input placeholder="Nuevo participante" value={newParticipant} onChange={e=>setNewParticipant(e.target.value)} />
+        <button onClick={addParticipant}>Añadir</button>
       </section>
 
       {/* PASAJEROS DEL DÍA */}
-      <section>
+      <section className="card">
         <h2>Pasajeros del día</h2>
-        {participants.map(p => (
-          <div key={p.id}>
-            <label>
-              <input
-                type="checkbox"
-                checked={todayPassengers.includes(p.name)}
-                onChange={() => togglePassenger(p.name)}
-              />
+        <div className="checkbox-list">
+          {participants.map(p => (
+            <label key={p.id}>
+              <input type="checkbox" checked={todayPassengers.includes(p.name)} onChange={()=>togglePassenger(p.name)} />
               {p.name}
             </label>
-          </div>
-        ))}
+          ))}
+        </div>
 
-        <div>
-          <h3>Conductor sugerido:</h3>
+        <div className="driver-suggestion card">
+          <h3>Conductor sugerido</h3>
           <input value={suggestedDriver} onChange={e=>setSuggestedDriver(e.target.value)} />
 
-          <h4>Deudas del conductor con pasajeros de hoy:</h4>
+          <h4>Deudas del conductor con pasajeros de hoy</h4>
           <ul>
             {todayPassengers.filter(p => p!==suggestedDriver).map(p => (
               <li key={p}>{suggestedDriver} debe {debts[suggestedDriver]?.[p] || 0} a {p}</li>
@@ -191,18 +192,20 @@ function App() {
           </ul>
         </div>
 
-        <button onClick={confirmTrip}>Confirmar Viaje</button>
-        <button onClick={resetAll}>Reset Total</button>
+        <div className="buttons">
+          <button onClick={confirmTrip}>Confirmar Viaje</button>
+          <button onClick={resetAll}>Reset Total</button>
+        </div>
       </section>
 
       {/* HISTORIAL */}
-      <section>
+      <section className="card">
         <h2>Historial (últimos 20 viajes)</h2>
         <ul>
           {history.filter(h=>!h.deleted).slice(0,20).map((h,i)=>(
             <li key={h.id}>
               {new Date(h.date).toLocaleDateString()} - {h.driver} - {h.passengers.join(", ")}
-              {h.modifiedBy ? `(Modificado por: ${h.modifiedBy})` : ""}
+              {h.modifiedBy ? ` (Modificado por: ${h.modifiedBy})` : ""}
               {i<5 && <button onClick={()=>editRecentTrip(h.id)}>Editar últimos 5</button>}
             </li>
           ))}
@@ -210,7 +213,7 @@ function App() {
       </section>
 
       {/* DEUDAS GLOBALES */}
-      <section>
+      <section className="card">
         <h2>Deudas Globales</h2>
         <table>
           <thead>
