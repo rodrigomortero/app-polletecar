@@ -1,31 +1,81 @@
 import React, { useState } from "react";
 import "./App.css";
 
-function App() {
+/* ================== UTILIDADES DE DEUDA ================== */
+
+const parKey = (a, b) => [a, b].sort().join("|");
+
+const aplicarViajeADudas = (deudas, conductor, pasajeros) => {
+  let nuevas = { ...deudas };
+
+  pasajeros.forEach(p => {
+    if (p === conductor) return;
+
+    const key = parKey(p, conductor);
+    const actual = nuevas[key];
+
+    if (!actual) {
+      nuevas[key] = { deudor: p, cantidad: 1 };
+      return;
+    }
+
+    // Si el pasajero debía al conductor → se reduce
+    if (actual.deudor === p) {
+      if (actual.cantidad === 1) {
+        delete nuevas[key];
+      } else {
+        nuevas[key] = { ...actual, cantidad: actual.cantidad - 1 };
+      }
+      return;
+    }
+
+    // Si el conductor debía al pasajero → aumenta
+    nuevas[key] = {
+      deudor: conductor,
+      cantidad: actual.cantidad + 1
+    };
+  });
+
+  return nuevas;
+};
+
+const recalcularTodasLasDeudas = (historial) => {
+  let deudas = {};
+  historial.forEach(v => {
+    deudas = aplicarViajeADudas(deudas, v.conductor, v.pasajeros);
+  });
+  return deudas;
+};
+
+/* ================== APP ================== */
+
+export default function App() {
   const [participantes, setParticipantes] = useState([]);
-  const [nuevoNombre, setNuevoNombre] = useState("");
+  const [nuevo, setNuevo] = useState("");
 
   const [hoy, setHoy] = useState([]);
-  const [deudas, setDeudas] = useState({});
+  const [conductorManual, setConductorManual] = useState("");
+
   const [historial, setHistorial] = useState([]);
+  const [deudas, setDeudas] = useState({});
 
   const [resetPaso, setResetPaso] = useState(0);
 
-  /* ---------------- PARTICIPANTES ---------------- */
+  /* ================== PARTICIPANTES ================== */
 
-  const añadirParticipante = () => {
-    if (!nuevoNombre.trim()) return;
-    if (participantes.includes(nuevoNombre)) return;
-    setParticipantes([...participantes, nuevoNombre]);
-    setNuevoNombre("");
+  const addParticipante = () => {
+    if (!nuevo.trim()) return;
+    if (participantes.includes(nuevo)) return;
+    setParticipantes([...participantes, nuevo]);
+    setNuevo("");
   };
 
-  const eliminarParticipante = (p) => {
+  const removeParticipante = (p) => {
     setParticipantes(participantes.filter(x => x !== p));
     setHoy(hoy.filter(x => x !== p));
   };
 
-  /* ---------------- VIAJE HOY ---------------- */
+  /* ================== VIAJE DE HOY ================== */
 
   const toggleHoy = (p) => {
     setHoy(
@@ -35,55 +85,68 @@ function App() {
     );
   };
 
-  /* ---------------- SUGERENCIA ---------------- */
+  /* ================== SUGERENCIA CONDUCTOR ================== */
 
   const sugerirConductor = () => {
+    if (hoy.length < 2) return "";
+
+    let peor = "";
     let max = -1;
-    let elegido = null;
 
     hoy.forEach(p => {
       let total = 0;
       hoy.forEach(o => {
-        if (o !== p) total += deudas[p]?.[o] || 0;
+        if (o === p) return;
+        const key = parKey(p, o);
+        const d = deudas[key];
+        if (d && d.deudor === p) total += d.cantidad;
       });
+
       if (total > max) {
         max = total;
-        elegido = p;
+        peor = p;
       }
     });
 
-    return elegido;
+    return peor;
   };
 
   const sugerido = sugerirConductor();
+  const conductorFinal = conductorManual || sugerido;
 
-  /* ---------------- CONFIRMAR VIAJE ---------------- */
+  /* ================== CONFIRMAR VIAJE ================== */
 
-  const confirmarViaje = (conductor = sugerido) => {
-    if (!conductor || hoy.length < 2) return;
+  const confirmarViaje = () => {
+    if (!conductorFinal || hoy.length < 2) return;
 
-    const nuevas = JSON.parse(JSON.stringify(deudas));
-
-    hoy.forEach(p => {
-      if (p !== conductor) {
-        nuevas[p] = nuevas[p] || {};
-        nuevas[p][conductor] = (nuevas[p][conductor] || 0) + 1;
-      }
-    });
-
-    const viaje = {
+    const nuevoViaje = {
+      id: Date.now(),
       fecha: new Date().toLocaleString(),
       pasajeros: [...hoy],
-      conductor,
-      accion: "Viaje confirmado"
+      conductor: conductorFinal
     };
 
-    setDeudas(nuevas);
-    setHistorial([viaje, ...historial].slice(0, 20));
+    const nuevoHistorial = [nuevoViaje, ...historial].slice(0, 20);
+    const nuevasDeudas = recalcularTodasLasDeudas(nuevoHistorial);
+
+    setHistorial(nuevoHistorial);
+    setDeudas(nuevasDeudas);
     setHoy([]);
+    setConductorManual("");
   };
 
-  /* ---------------- RESET TOTAL ---------------- */
+  /* ================== EDITAR ÚLTIMOS 5 VIAJES ================== */
+
+  const editarConductor = (id, nuevoConductor) => {
+    const editado = historial.map(v =>
+      v.id === id ? { ...v, conductor: nuevoConductor } : v
+    );
+
+    setHistorial(editado);
+    setDeudas(recalcularTodasLasDeudas(editado));
+  };
+
+  /* ================== RESET TOTAL ================== */
 
   const resetTotal = () => {
     if (resetPaso === 0) {
@@ -92,12 +155,13 @@ function App() {
     }
     setParticipantes([]);
     setHoy([]);
-    setDeudas({});
     setHistorial([]);
+    setDeudas({});
+    setConductorManual("");
     setResetPaso(0);
   };
 
-  /* ---------------- RENDER ---------------- */
+  /* ================== RENDER ================== */
 
   return (
     <div className="app">
@@ -106,18 +170,13 @@ function App() {
       {/* PARTICIPANTES */}
       <section>
         <h2>Participantes</h2>
-        <input
-          value={nuevoNombre}
-          onChange={e => setNuevoNombre(e.target.value)}
-          placeholder="Nombre"
-        />
-        <button onClick={añadirParticipante}>Añadir</button>
-
+        <input value={nuevo} onChange={e => setNuevo(e.target.value)} />
+        <button onClick={addParticipante}>Añadir</button>
         <ul>
           {participantes.map(p => (
             <li key={p}>
               {p}
-              <button onClick={() => eliminarParticipante(p)}>❌</button>
+              <button onClick={() => removeParticipante(p)}>❌</button>
             </li>
           ))}
         </ul>
@@ -144,18 +203,27 @@ function App() {
           <h2>Sugerencia de posible conductor</h2>
           <strong>{sugerido}</strong>
 
-          <p>Deudas del conductor sugerido:</p>
+          <p>Deudas del conductor sugerido con los pasajeros de hoy:</p>
           <ul>
-            {hoy.filter(p => p !== sugerido).map(p => (
-              <li key={p}>
-                {sugerido} debe {deudas[sugerido]?.[p] || 0} a {p}
-              </li>
-            ))}
+            {hoy.filter(p => p !== sugerido).map(p => {
+              const key = parKey(sugerido, p);
+              const d = deudas[key];
+              const cant = d && d.deudor === sugerido ? d.cantidad : 0;
+              return <li key={p}>{sugerido} debe {cant} a {p}</li>;
+            })}
           </ul>
 
-          <button onClick={() => confirmarViaje()}>
-            Confirmar viaje
-          </button>
+          <select
+            value={conductorManual}
+            onChange={e => setConductorManual(e.target.value)}
+          >
+            <option value="">Usar sugerencia</option>
+            {hoy.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          <button onClick={confirmarViaje}>Confirmar viaje</button>
         </section>
       )}
 
@@ -173,11 +241,13 @@ function App() {
             {participantes.map(a => (
               <tr key={a}>
                 <td><strong>{a}</strong></td>
-                {participantes.map(b => (
-                  <td key={b}>
-                    {a === b ? "—" : (deudas[a]?.[b] || 0)}
-                  </td>
-                ))}
+                {participantes.map(b => {
+                  if (a === b) return <td key={b}>—</td>;
+                  const key = parKey(a, b);
+                  const d = deudas[key];
+                  const v = d && d.deudor === a ? d.cantidad : 0;
+                  return <td key={b}>{v}</td>;
+                })}
               </tr>
             ))}
           </tbody>
@@ -186,13 +256,24 @@ function App() {
 
       {/* HISTORIAL */}
       <section>
-        <h2>Historial (últimos 20)</h2>
+        <h2>Historial (20 últimos)</h2>
         {historial.map((v, i) => (
-          <div key={i} className="historial">
+          <div key={v.id} className="historial">
             <strong>{v.fecha}</strong><br />
             Pasajeros: {v.pasajeros.join(", ")}<br />
-            Conductor: {v.conductor}<br />
-            {v.accion}
+            Conductor:
+            {i < 5 ? (
+              <select
+                value={v.conductor}
+                onChange={e => editarConductor(v.id, e.target.value)}
+              >
+                {v.pasajeros.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            ) : (
+              <strong> {v.conductor}</strong>
+            )}
           </div>
         ))}
       </section>
@@ -206,5 +287,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
