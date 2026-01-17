@@ -1,169 +1,186 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import "./App.css";
 
-const PARTICIPANTS = ["Ana", "Luis", "Pedro", "Marta"];
+function App() {
+  // Participantes habituales
+  const [participantes, setParticipantes] = useState([]);
+  const [nuevoNombre, setNuevoNombre] = useState("");
 
-export default function App() {
-  const [passengersToday, setPassengersToday] = useState([]);
-  const [debts, setDebts] = useState({});
-  const [manualDriver, setManualDriver] = useState("");
+  // Viaje de hoy
+  const [hoy, setHoy] = useState([]);
+  const [conductorFinal, setConductorFinal] = useState(null);
 
-  // ---- helpers ----
-  const getDebt = (from, to) => debts?.[from]?.[to] || 0;
+  // Deudas: { A: { B: n } }
+  const [deudas, setDeudas] = useState({});
 
-  const addDebt = (from, to) => {
-    setDebts((prev) => {
-      const newDebts = { ...prev };
+  /* ---------------- PARTICIPANTES ---------------- */
 
-      // inicializar
-      if (!newDebts[from]) newDebts[from] = {};
-      if (!newDebts[to]) newDebts[to] = {};
+  const añadirParticipante = () => {
+    if (!nuevoNombre.trim()) return;
+    if (participantes.includes(nuevoNombre)) return;
 
-      // sumar deuda
-      newDebts[from][to] = (newDebts[from][to] || 0) + 1;
-
-      // cancelar si existe deuda contraria
-      if (newDebts[to][from]) {
-        const cancel = Math.min(newDebts[from][to], newDebts[to][from]);
-        newDebts[from][to] -= cancel;
-        newDebts[to][from] -= cancel;
-      }
-
-      return newDebts;
-    });
+    setParticipantes([...participantes, nuevoNombre]);
+    setNuevoNombre("");
   };
 
-  // ---- suggestion logic ----
-  const suggestedDriver = useMemo(() => {
-    if (passengersToday.length < 2) return "";
+  const eliminarParticipante = (nombre) => {
+    setParticipantes(participantes.filter(p => p !== nombre));
+    setHoy(hoy.filter(p => p !== nombre));
+  };
 
-    let maxDebt = -1;
-    let candidate = "";
+  /* ---------------- VIAJE HOY ---------------- */
 
-    passengersToday.forEach((p) => {
-      let totalDebt = 0;
-      passengersToday.forEach((other) => {
-        if (p !== other) {
-          totalDebt += getDebt(p, other);
+  const toggleHoy = (nombre) => {
+    setHoy(
+      hoy.includes(nombre)
+        ? hoy.filter(p => p !== nombre)
+        : [...hoy, nombre]
+    );
+  };
+
+  /* ---------------- SUGERENCIA CONDUCTOR ---------------- */
+
+  const sugerirConductor = () => {
+    if (hoy.length === 0) return null;
+
+    let peor = hoy[0];
+    let maxDeuda = -1;
+
+    hoy.forEach(p => {
+      let deudaTotal = 0;
+      hoy.forEach(o => {
+        if (o !== p) {
+          deudaTotal += deudas[p]?.[o] || 0;
         }
       });
 
-      if (totalDebt > maxDebt) {
-        maxDebt = totalDebt;
-        candidate = p;
+      if (deudaTotal > maxDeuda) {
+        maxDeuda = deudaTotal;
+        peor = p;
       }
     });
 
-    return candidate;
-  }, [passengersToday, debts]);
+    return peor;
+  };
 
-  const finalDriver = manualDriver || suggestedDriver;
+  const sugerido = sugerirConductor();
 
-  // ---- confirm trip ----
-  const confirmTrip = () => {
-    if (!finalDriver) return;
+  /* ---------------- CONFIRMAR VIAJE ---------------- */
 
-    passengersToday.forEach((p) => {
-      if (p !== finalDriver) {
-        addDebt(p, finalDriver);
+  const confirmarViaje = () => {
+    if (!conductorFinal || hoy.length < 2) return;
+
+    const nuevas = { ...deudas };
+
+    hoy.forEach(p => {
+      if (p !== conductorFinal) {
+        if (!nuevas[p]) nuevas[p] = {};
+        nuevas[p][conductorFinal] =
+          (nuevas[p][conductorFinal] || 0) + 1;
       }
     });
 
-    setPassengersToday([]);
-    setManualDriver("");
+    setDeudas(nuevas);
+    setHoy([]);
+    setConductorFinal(null);
   };
 
-  // ---- UI ----
-  const togglePassenger = (p) => {
-    setPassengersToday((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
-  };
+  /* ---------------- RENDER ---------------- */
 
   return (
     <div className="app">
       <h1>🚗 PolleteCar</h1>
 
-      <section className="card">
+      {/* PARTICIPANTES */}
+      <section>
         <h2>Participantes habituales</h2>
-        <div className="chips">
-          {PARTICIPANTS.map((p) => (
-            <button
-              key={p}
-              className={passengersToday.includes(p) ? "chip active" : "chip"}
-              onClick={() => togglePassenger(p)}
-            >
-              {p}
-            </button>
-          ))}
+        <div className="fila">
+          <input
+            value={nuevoNombre}
+            onChange={e => setNuevoNombre(e.target.value)}
+            placeholder="Nombre"
+          />
+          <button onClick={añadirParticipante}>Añadir</button>
         </div>
-        <p className="hint">Selecciona quién va hoy en el coche</p>
+
+        <ul>
+          {participantes.map(p => (
+            <li key={p}>
+              {p}
+              <button onClick={() => eliminarParticipante(p)}>❌</button>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      {passengersToday.length >= 2 && (
-        <section className="card">
+      {/* VIAJE DE HOY */}
+      <section>
+        <h2>¿Quién va hoy en el coche?</h2>
+        {participantes.map(p => (
+          <label key={p} className="check">
+            <input
+              type="checkbox"
+              checked={hoy.includes(p)}
+              onChange={() => toggleHoy(p)}
+            />
+            {p}
+          </label>
+        ))}
+      </section>
+
+      {/* SUGERENCIA */}
+      {sugerido && (
+        <section className="sugerencia">
           <h2>Sugerencia de posible conductor</h2>
+          <strong>{sugerido}</strong>
 
-          <div className="suggestion">{suggestedDriver}</div>
+          <p>Deudas de {sugerido} con los pasajeros de hoy:</p>
+          <ul>
+            {hoy
+              .filter(p => p !== sugerido)
+              .map(p => (
+                <li key={p}>
+                  {sugerido} debe {deudas[sugerido]?.[p] || 0} a {p}
+                </li>
+              ))}
+          </ul>
 
-          <div className="debts-box">
-            <strong>Deudas con los pasajeros de hoy:</strong>
-            <ul>
-              {passengersToday
-                .filter((p) => p !== suggestedDriver)
-                .map((p) => (
-                  <li key={p}>
-                    {suggestedDriver} debe {getDebt(suggestedDriver, p)} a {p}
-                  </li>
-                ))}
-            </ul>
-          </div>
-
-          <label>Cambiar conductor manualmente:</label>
           <select
-            value={manualDriver}
-            onChange={(e) => setManualDriver(e.target.value)}
+            value={conductorFinal || ""}
+            onChange={e => setConductorFinal(e.target.value)}
           >
-            <option value="">Usar sugerencia</option>
-            {passengersToday.map((p) => (
+            <option value="">Elegir conductor final</option>
+            {hoy.map(p => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
 
-          <button className="confirm" onClick={confirmTrip}>
+          <button onClick={confirmarViaje}>
             Confirmar viaje
           </button>
         </section>
       )}
 
-      <section className="card">
-        <h2>📊 Deudas entre participantes</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Quién debe</th>
-              <th>A quién</th>
-              <th>Viajes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(debts).flatMap(([from, tos]) =>
-              Object.entries(tos)
-                .filter(([, v]) => v > 0)
-                .map(([to, v]) => (
-                  <tr key={from + to}>
-                    <td>{from}</td>
-                    <td>{to}</td>
-                    <td>{v}</td>
-                  </tr>
-                ))
-            )}
-            {Object.keys(debts).length === 0 && (
-              <tr><td colSpan="3">Sin deudas</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* DEUDAS */}
+      <section>
+        <h2>Deudas entre participantes</h2>
+        {participantes.map(a => (
+          <div key={a} className="deuda">
+            <strong>{a}</strong>
+            <ul>
+              {participantes
+                .filter(b => b !== a)
+                .map(b => (
+                  <li key={b}>
+                    debe {deudas[a]?.[b] || 0} a {b}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ))}
       </section>
     </div>
   );
 }
+
+export default App;
