@@ -1,290 +1,161 @@
-<h1 style={{ color: "red" }}>CAMBIO DE PRUEBA</h1>
 import React, { useState } from "react";
 import "./App.css";
 
-/* ================== UTILIDADES DE DEUDA ================== */
-
-const parKey = (a, b) => [a, b].sort().join("|");
-
-const aplicarViajeADudas = (deudas, conductor, pasajeros) => {
-  let nuevas = { ...deudas };
-
-  pasajeros.forEach(p => {
-    if (p === conductor) return;
-
-    const key = parKey(p, conductor);
-    const actual = nuevas[key];
-
-    if (!actual) {
-      nuevas[key] = { deudor: p, cantidad: 1 };
-      return;
-    }
-
-    // Si el pasajero debía al conductor → se reduce
-    if (actual.deudor === p) {
-      if (actual.cantidad === 1) {
-        delete nuevas[key];
-      } else {
-        nuevas[key] = { ...actual, cantidad: actual.cantidad - 1 };
-      }
-      return;
-    }
-
-    // Si el conductor debía al pasajero → aumenta
-    nuevas[key] = {
-      deudor: conductor,
-      cantidad: actual.cantidad + 1
-    };
-  });
-
-  return nuevas;
-};
-
-const recalcularTodasLasDeudas = (historial) => {
-  let deudas = {};
-  historial.forEach(v => {
-    deudas = aplicarViajeADudas(deudas, v.conductor, v.pasajeros);
-  });
-  return deudas;
-};
-
-/* ================== APP ================== */
-
 export default function App() {
-  const [participantes, setParticipantes] = useState([]);
-  const [nuevo, setNuevo] = useState("");
-
-  const [hoy, setHoy] = useState([]);
-  const [conductorManual, setConductorManual] = useState("");
-
-  const [historial, setHistorial] = useState([]);
+  const [participantes, setParticipantes] = useState(["Ana", "Edu"]);
+  const [pasajerosDia, setPasajerosDia] = useState([...participantes]);
   const [deudas, setDeudas] = useState({});
+  const [conductorSugerido, setConductorSugerido] = useState(null);
+  const [conductorSeleccionado, setConductorSeleccionado] = useState(null);
+  const [historial, setHistorial] = useState([]);
 
-  const [resetPaso, setResetPaso] = useState(0);
-
-  /* ================== PARTICIPANTES ================== */
-
-  const addParticipante = () => {
-    if (!nuevo.trim()) return;
-    if (participantes.includes(nuevo)) return;
-    setParticipantes([...participantes, nuevo]);
-    setNuevo("");
-  };
-
-  const removeParticipante = (p) => {
-    setParticipantes(participantes.filter(x => x !== p));
-    setHoy(hoy.filter(x => x !== p));
-  };
-
-  /* ================== VIAJE DE HOY ================== */
-
-  const toggleHoy = (p) => {
-    setHoy(
-      hoy.includes(p)
-        ? hoy.filter(x => x !== p)
-        : [...hoy, p]
-    );
-  };
-
-  /* ================== SUGERENCIA CONDUCTOR ================== */
-
+  // Calcula la sugerencia de conductor: quien más debe a los demás de ese día
   const sugerirConductor = () => {
-    if (hoy.length < 2) return "";
+    let maxDeuda = -1;
+    let sugerido = pasajerosDia[0];
 
-    let peor = "";
-    let max = -1;
-
-    hoy.forEach(p => {
-      let total = 0;
-      hoy.forEach(o => {
-        if (o === p) return;
-        const key = parKey(p, o);
-        const d = deudas[key];
-        if (d && d.deudor === p) total += d.cantidad;
+    pasajerosDia.forEach((p) => {
+      let deudaTotal = 0;
+      pasajerosDia.forEach((otro) => {
+        if (p === otro) return;
+        const clave = [p, otro].sort().join("|");
+        const info = deudas[clave];
+        if (info) {
+          deudaTotal += info.deudor === p ? info.cantidad : 0;
+        }
       });
-
-      if (total > max) {
-        max = total;
-        peor = p;
+      if (deudaTotal > maxDeuda) {
+        maxDeuda = deudaTotal;
+        sugerido = p;
       }
     });
 
-    return peor;
+    setConductorSugerido(sugerido);
+    setConductorSeleccionado(sugerido);
   };
 
-  const sugerido = sugerirConductor();
-  const conductorFinal = conductorManual || sugerido;
-
-  /* ================== CONFIRMAR VIAJE ================== */
-
+  // Aplica el viaje y actualiza deudas
   const confirmarViaje = () => {
-    if (!conductorFinal || hoy.length < 2) return;
-
-    const nuevoViaje = {
-      id: Date.now(),
-      fecha: new Date().toLocaleString(),
-      pasajeros: [...hoy],
-      conductor: conductorFinal
-    };
-
-    const nuevoHistorial = [nuevoViaje, ...historial].slice(0, 20);
-    const nuevasDeudas = recalcularTodasLasDeudas(nuevoHistorial);
-
+    const nuevoHistorial = [
+      { conductor: conductorSeleccionado, pasajeros: [...pasajerosDia] },
+      ...historial,
+    ].slice(0, 20); // Guardar últimos 20 viajes
     setHistorial(nuevoHistorial);
+
+    let nuevasDeudas = { ...deudas };
+
+    pasajerosDia.forEach((p) => {
+      if (p === conductorSeleccionado) return;
+
+      const clave = [p, conductorSeleccionado].sort().join("|");
+      const actual = nuevasDeudas[clave];
+
+      if (!actual) {
+        // No hay deuda previa
+        nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
+      } else if (actual.deudor === p) {
+        // Deuda del pasajero al conductor → se cancela
+        if (actual.cantidad === 1) delete nuevasDeudas[clave];
+        else nuevasDeudas[clave] = { ...actual, cantidad: actual.cantidad - 1 };
+      } else {
+        // Conductor le debía al pasajero → se acumula
+        nuevasDeudas[clave] = { deudor: conductorSeleccionado, cantidad: actual.cantidad + 1 };
+      }
+    });
+
     setDeudas(nuevasDeudas);
-    setHoy([]);
-    setConductorManual("");
+    setConductorSugerido(null);
+    setConductorSeleccionado(null);
+    alert("Viaje confirmado y deudas actualizadas ✅");
   };
-
-  /* ================== EDITAR ÚLTIMOS 5 VIAJES ================== */
-
-  const editarConductor = (id, nuevoConductor) => {
-    const editado = historial.map(v =>
-      v.id === id ? { ...v, conductor: nuevoConductor } : v
-    );
-
-    setHistorial(editado);
-    setDeudas(recalcularTodasLasDeudas(editado));
-  };
-
-  /* ================== RESET TOTAL ================== */
-
-  const resetTotal = () => {
-    if (resetPaso === 0) {
-      setResetPaso(1);
-      return;
-    }
-    setParticipantes([]);
-    setHoy([]);
-    setHistorial([]);
-    setDeudas({});
-    setConductorManual("");
-    setResetPaso(0);
-  };
-
-  /* ================== RENDER ================== */
 
   return (
-    <div className="app">
-      <h1>🚗 PolleteCar</h1>
+    <div className="App">
+      <h1>App de Gestión de Viajes</h1>
 
-      {/* PARTICIPANTES */}
-      <section>
-        <h2>Participantes</h2>
-        <input value={nuevo} onChange={e => setNuevo(e.target.value)} />
-        <button onClick={addParticipante}>Añadir</button>
-        <ul>
-          {participantes.map(p => (
-            <li key={p}>
-              {p}
-              <button onClick={() => removeParticipante(p)}>❌</button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* VIAJE */}
-      <section>
-        <h2>¿Quién va hoy?</h2>
-        {participantes.map(p => (
-          <label key={p}>
-            <input
-              type="checkbox"
-              checked={hoy.includes(p)}
-              onChange={() => toggleHoy(p)}
-            />
-            {p}
-          </label>
+      <h2>Participantes habituales</h2>
+      <ul>
+        {participantes.map((p, i) => (
+          <li key={i}>{p}</li>
         ))}
-      </section>
+      </ul>
 
-      {/* SUGERENCIA */}
-      {sugerido && (
-        <section className="sugerencia">
-          <h2>Sugerencia de posible conductor</h2>
-          <strong>{sugerido}</strong>
+      <h2>Pasajeros de hoy</h2>
+      {participantes.map((p, i) => (
+        <label key={i}>
+          <input
+            type="checkbox"
+            checked={pasajerosDia.includes(p)}
+            onChange={(e) => {
+              if (e.target.checked) setPasajerosDia([...pasajerosDia, p]);
+              else setPasajerosDia(pasajerosDia.filter((x) => x !== p));
+            }}
+          />
+          {p}
+        </label>
+      ))}
 
-          <p>Deudas del conductor sugerido con los pasajeros de hoy:</p>
+      <div style={{ marginTop: "20px" }}>
+        <button onClick={sugerirConductor}>Sugerir conductor</button>
+      </div>
+
+      {conductorSugerido && (
+        <div>
+          <h2>Sugerencia de conductor: {conductorSugerido}</h2>
+          <h3>Deudas del sugerido con pasajeros de hoy:</h3>
           <ul>
-            {hoy.filter(p => p !== sugerido).map(p => {
-              const key = parKey(sugerido, p);
-              const d = deudas[key];
-              const cant = d && d.deudor === sugerido ? d.cantidad : 0;
-              return <li key={p}>{sugerido} debe {cant} a {p}</li>;
+            {pasajerosDia.map((p, i) => {
+              if (p === conductorSugerido) return null;
+              const clave = [p, conductorSugerido].sort().join("|");
+              const info = deudas[clave];
+              if (!info) return <li key={i}>{p}: 0</li>;
+              return (
+                <li key={i}>
+                  {info.deudor === conductorSugerido
+                    ? `${conductorSugerido} le debe ${info.cantidad} a ${p}`
+                    : `${p} le debe ${info.cantidad} a ${conductorSugerido}`}
+                </li>
+              );
             })}
           </ul>
+          <label>
+            Seleccionar conductor manualmente:
+            <select
+              value={conductorSeleccionado}
+              onChange={(e) => setConductorSeleccionado(e.target.value)}
+            >
+              {pasajerosDia.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <select
-            value={conductorManual}
-            onChange={e => setConductorManual(e.target.value)}
-          >
-            <option value="">Usar sugerencia</option>
-            {hoy.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-
-          <button onClick={confirmarViaje}>Confirmar viaje</button>
-        </section>
+          <div style={{ marginTop: "20px" }}>
+            <button onClick={confirmarViaje}>Confirmar viaje</button>
+          </div>
+        </div>
       )}
 
-      {/* DEUDAS */}
-      <section>
-        <h2>Deudas</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Debe \ A</th>
-              {participantes.map(p => <th key={p}>{p}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {participantes.map(a => (
-              <tr key={a}>
-                <td><strong>{a}</strong></td>
-                {participantes.map(b => {
-                  if (a === b) return <td key={b}>—</td>;
-                  const key = parKey(a, b);
-                  const d = deudas[key];
-                  const v = d && d.deudor === a ? d.cantidad : 0;
-                  return <td key={b}>{v}</td>;
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {/* HISTORIAL */}
-      <section>
-        <h2>Historial (20 últimos)</h2>
-        {historial.map((v, i) => (
-          <div key={v.id} className="historial">
-            <strong>{v.fecha}</strong><br />
-            Pasajeros: {v.pasajeros.join(", ")}<br />
-            Conductor:
-            {i < 5 ? (
-              <select
-                value={v.conductor}
-                onChange={e => editarConductor(v.id, e.target.value)}
-              >
-                {v.pasajeros.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            ) : (
-              <strong> {v.conductor}</strong>
-            )}
-          </div>
+      <h2>Deudas generales</h2>
+      <ul>
+        {Object.entries(deudas).map(([clave, info]) => (
+          <li key={clave}>
+            {info.deudor} debe {info.cantidad} a{" "}
+            {clave.split("|").filter((x) => x !== info.deudor)[0]}
+          </li>
         ))}
-      </section>
+      </ul>
 
-      {/* RESET */}
-      <section>
-        <button className="reset" onClick={resetTotal}>
-          {resetPaso === 0 ? "RESET TOTAL" : "¿SEGURO? CONFIRMAR RESET"}
-        </button>
-      </section>
+      <h2>Historial últimos 20 viajes</h2>
+      <ul>
+        {historial.map((v, i) => (
+          <li key={i}>
+            {v.conductor} llevó a {v.pasajeros.join(", ")}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
