@@ -2,64 +2,93 @@ import React, { useState } from "react";
 import "./App.css";
 
 export default function App() {
-  const [participantes, setParticipantes] = useState(["Ana", "Edu"]);
-  const [pasajerosDia, setPasajerosDia] = useState([...participantes]);
+  // Lista de participantes inicial vacía
+  const [participantes, setParticipantes] = useState([]);
+  const [pasajerosDia, setPasajerosDia] = useState([]);
   const [deudas, setDeudas] = useState({});
   const [conductorSugerido, setConductorSugerido] = useState(null);
   const [conductorSeleccionado, setConductorSeleccionado] = useState(null);
   const [historial, setHistorial] = useState([]);
+  const [nuevoParticipante, setNuevoParticipante] = useState("");
 
-  // Calcula la sugerencia de conductor: quien más debe a los demás de ese día
+  // Añadir participante
+  const agregarParticipante = () => {
+    if (nuevoParticipante && !participantes.includes(nuevoParticipante)) {
+      setParticipantes([...participantes, nuevoParticipante]);
+      setNuevoParticipante("");
+    }
+  };
+
+  // Editar participante
+  const editarParticipante = (viejo, nuevo) => {
+    if (!nuevo) return;
+    setParticipantes(
+      participantes.map((p) => (p === viejo ? nuevo : p))
+    );
+    setPasajerosDia(
+      pasajerosDia.map((p) => (p === viejo ? nuevo : p))
+    );
+  };
+
+  // Eliminar participante
+  const eliminarParticipante = (nombre) => {
+    setParticipantes(participantes.filter((p) => p !== nombre));
+    setPasajerosDia(pasajerosDia.filter((p) => p !== nombre));
+    // Opcional: eliminar todas las deudas relacionadas
+    let nuevasDeudas = { ...deudas };
+    Object.keys(nuevasDeudas).forEach((clave) => {
+      if (clave.includes(nombre)) delete nuevasDeudas[clave];
+    });
+    setDeudas(nuevasDeudas);
+  };
+
+  // Sugerir conductor según quién más debe a los pasajeros de hoy
   const sugerirConductor = () => {
+    if (!pasajerosDia.length) return;
     let maxDeuda = -1;
     let sugerido = pasajerosDia[0];
-
     pasajerosDia.forEach((p) => {
       let deudaTotal = 0;
       pasajerosDia.forEach((otro) => {
         if (p === otro) return;
         const clave = [p, otro].sort().join("|");
         const info = deudas[clave];
-        if (info) {
-          deudaTotal += info.deudor === p ? info.cantidad : 0;
-        }
+        if (info) deudaTotal += info.deudor === p ? info.cantidad : 0;
       });
       if (deudaTotal > maxDeuda) {
         maxDeuda = deudaTotal;
         sugerido = p;
       }
     });
-
     setConductorSugerido(sugerido);
     setConductorSeleccionado(sugerido);
   };
 
-  // Aplica el viaje y actualiza deudas
+  // Confirmar viaje
   const confirmarViaje = () => {
+    if (!conductorSeleccionado) return alert("Selecciona un conductor");
+    // Actualizar historial
     const nuevoHistorial = [
       { conductor: conductorSeleccionado, pasajeros: [...pasajerosDia] },
       ...historial,
-    ].slice(0, 20); // Guardar últimos 20 viajes
+    ].slice(0, 20);
     setHistorial(nuevoHistorial);
 
+    // Actualizar deudas
     let nuevasDeudas = { ...deudas };
-
     pasajerosDia.forEach((p) => {
       if (p === conductorSeleccionado) return;
-
       const clave = [p, conductorSeleccionado].sort().join("|");
       const actual = nuevasDeudas[clave];
 
       if (!actual) {
-        // No hay deuda previa
         nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
       } else if (actual.deudor === p) {
-        // Deuda del pasajero al conductor → se cancela
-        if (actual.cantidad === 1) delete nuevasDeudas[clave];
-        else nuevasDeudas[clave] = { ...actual, cantidad: actual.cantidad - 1 };
+        // Cancela deuda si conductor devuelve viaje
+        delete nuevasDeudas[clave];
       } else {
-        // Conductor le debía al pasajero → se acumula
-        nuevasDeudas[clave] = { deudor: conductorSeleccionado, cantidad: actual.cantidad + 1 };
+        // Conductor le debía a pasajero → se acumula
+        nuevasDeudas[clave] = { deudor: conductorSeleccionado, cantidad: 1 };
       }
     });
 
@@ -71,24 +100,44 @@ export default function App() {
 
   return (
     <div className="App">
-      <h1>App de Gestión de Viajes</h1>
+      <h1>Gestión de viajes del coche</h1>
 
       <h2>Participantes habituales</h2>
+      <input
+        type="text"
+        placeholder="Nuevo participante"
+        value={nuevoParticipante}
+        onChange={(e) => setNuevoParticipante(e.target.value)}
+      />
+      <button onClick={agregarParticipante}>Añadir</button>
       <ul>
-        {participantes.map((p, i) => (
-          <li key={i}>{p}</li>
+        {participantes.map((p) => (
+          <li key={p}>
+            {p}{" "}
+            <button
+              onClick={() => {
+                const nuevo = prompt("Nuevo nombre:", p);
+                editarParticipante(p, nuevo);
+              }}
+            >
+              Editar
+            </button>{" "}
+            <button onClick={() => eliminarParticipante(p)}>Eliminar</button>
+          </li>
         ))}
       </ul>
 
       <h2>Pasajeros de hoy</h2>
-      {participantes.map((p, i) => (
-        <label key={i}>
+      {participantes.map((p) => (
+        <label key={p}>
           <input
             type="checkbox"
             checked={pasajerosDia.includes(p)}
             onChange={(e) => {
-              if (e.target.checked) setPasajerosDia([...pasajerosDia, p]);
-              else setPasajerosDia(pasajerosDia.filter((x) => x !== p));
+              if (e.target.checked)
+                setPasajerosDia([...pasajerosDia, p]);
+              else
+                setPasajerosDia(pasajerosDia.filter((x) => x !== p));
             }}
           />
           {p}
@@ -104,13 +153,13 @@ export default function App() {
           <h2>Sugerencia de conductor: {conductorSugerido}</h2>
           <h3>Deudas del sugerido con pasajeros de hoy:</h3>
           <ul>
-            {pasajerosDia.map((p, i) => {
+            {pasajerosDia.map((p) => {
               if (p === conductorSugerido) return null;
               const clave = [p, conductorSugerido].sort().join("|");
               const info = deudas[clave];
-              if (!info) return <li key={i}>{p}: 0</li>;
+              if (!info) return <li key={p}>{p}: 0</li>;
               return (
-                <li key={i}>
+                <li key={p}>
                   {info.deudor === conductorSugerido
                     ? `${conductorSugerido} le debe ${info.cantidad} a ${p}`
                     : `${p} le debe ${info.cantidad} a ${conductorSugerido}`}
@@ -118,6 +167,7 @@ export default function App() {
               );
             })}
           </ul>
+
           <label>
             Seleccionar conductor manualmente:
             <select
