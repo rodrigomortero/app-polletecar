@@ -1,255 +1,203 @@
-// src/App.js
-import React, { useState, useEffect } from "react";
-import { auth, provider, db } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+```javascript
+import React, { useEffect, useState } from "react";
 import "./App.css";
+import { auth, provider, db } from "./firebase";
+import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  addDoc,
+  onSnapshot,
+  serverTimestamp
+} from "firebase/firestore";
 
 export default function App() {
-  // ------------------- ESTADOS -------------------
   const [user, setUser] = useState(null);
   const [participants, setParticipants] = useState([]);
-  const [todayPassengers, setTodayPassengers] = useState([]);
-  const [suggestedDriver, setSuggestedDriver] = useState("");
-  const [driverDebts, setDriverDebts] = useState({});
+  const [todayPassengers, setTodayPassengers] = useState({});
+  const [debts, setDebts] = useState({});
+  const [suggestedDriver, setSuggestedDriver] = useState(null);
   const [history, setHistory] = useState([]);
-  const [activity, setActivity] = useState([]);
 
-  // ------------------- AUTH -------------------
-  const login = async () => {
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (e) {
-      console.log("Error login", e);
-    }
-  };
-  const logout = () => signOut(auth);
-
+  /* ---------- AUTH ---------- */
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
-        loadData();
-      } else setUser(null);
+    return onAuthStateChanged(auth, (u) => {
+      if (u) setUser(u);
+      else setUser(null);
     });
-    return () => unsub();
   }, []);
 
-  // ------------------- FIRESTORE -------------------
-  const loadData = async () => {
-    const docRef = doc(db, "appData", "state");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
+  const login = () => signInWithPopup(auth, provider);
+  const logout = () => signOut(auth);
+
+  /* ---------- LOAD DATA ---------- */
+  useEffect(() => {
+    if (!user) return;
+
+    const unsub = onSnapshot(doc(db, "app", "state"), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
       setParticipants(data.participants || []);
-      setTodayPassengers(data.todayPassengers || []);
+      setDebts(data.debts || {});
       setHistory(data.history || []);
-      setActivity(data.activity || []);
-    } else {
-      await setDoc(docRef, {
-        participants: [],
-        todayPassengers: [],
-        history: [],
-        activity: [],
-        debts: {}
-      });
-    }
-  };
+    });
 
-  const saveData = async (newState) => {
-    const docRef = doc(db, "appData", "state");
-    await setDoc(docRef, newState, { merge: true });
-  };
+    return unsub;
+  }, [user]);
 
-  // ------------------- PARTICIPANTES -------------------
-  const addParticipant = async (name) => {
-    if (!name || participants.includes(name)) return;
-    const newParticipants = [...participants, name];
-    setParticipants(newParticipants);
-    await saveData({ participants: newParticipants });
-    logActivity(`${user.displayName} añadió participante ${name}`);
-  };
+  /* ---------- HELPERS ---------- */
+  const debtKey = (from, to) => `${from}__${to}`;
 
-  const removeParticipant = async (name) => {
-    if (!window.confirm(`¿Seguro que quieres eliminar ${name}?`)) return;
-    const newParticipants = participants.filter((p) => p !== name);
-    setParticipants(newParticipants);
-    setTodayPassengers(todayPassengers.filter((p) => p !== name));
-    await saveData({ participants: newParticipants, todayPassengers });
-    logActivity(`${user.displayName} eliminó participante ${name}`);
-  };
+  const getDebt = (from, to) => debts[debtKey(from, to)] || 0;
 
-  // ------------------- HOY PASAJEROS -------------------
-  const toggleTodayPassenger = (name) => {
-    let newToday = [...todayPassengers];
-    if (todayPassengers.includes(name)) newToday = newToday.filter((p) => p !== name);
-    else newToday.push(name);
-    setTodayPassengers(newToday);
-    suggestDriver(newToday);
-  };
+  /* ---------- SUGGEST DRIVER ---------- */
+  const calculateSuggestion = () => {
+    const active = participants.filter(p => todayPassengers[p]);
 
-  // ------------------- SUGERENCIA DE CONDUCTOR -------------------
-  const suggestDriver = (passengers) => {
-    if (passengers.length === 0) {
-      setSuggestedDriver("");
-      setDriverDebts({});
-      return;
-    }
+    if (active.length < 2) return;
 
-    // Calcular deudas: conductor debe ir quien más deba a otros hoy
-    const debts = {};
-    passengers.forEach((p) => (debts[p] = 0));
+    let scores = {};
+    active.forEach(p => scores[p] = 0);
 
-    history.forEach((h) => {
-      h.passengers.forEach((p) => {
-        if (p !== h.driver && passengers.includes(p) && passengers.includes(h.driver)) {
-          debts[h.driver] += 1; // conductor acumula deuda
+    active.forEach(a => {
+      active.forEach(b => {
+        if (a !== b) {
+          scores[a] -= getDebt(a, b);
         }
       });
     });
 
-    // Elegir conductor con más deuda
-    let maxDebt = -1;
-    let driver = passengers[0];
-    passengers.forEach((p) => {
-      if (debts[p] > maxDebt) {
-        maxDebt = debts[p];
-        driver = p;
+    const worst = Object.entries(scores)
+      .sort((a, b) => a[1] - b[1])[0][0];
+
+    setSuggestedDriver(worst);
+  };
+
+  /* ---------- CONFIRM TRIP ---------- */
+  const confirmTrip = async () => {
+    if (!suggestedDriver) return;
+
+    const active = participants.filter(p => todayPassengers[p]);
+    let newDebts = { ...debts };
+
+    active.forEach(p => {
+      if (p === suggestedDriver) return;
+
+      const k1 = debtKey(p, suggestedDriver);
+      const k2 = debtKey(suggestedDriver, p);
+
+      if ((newDebts[k1] || 0) > 0) {
+        newDebts[k1] -= 1;
+      } else {
+        newDebts[k2] = (newDebts[k2] || 0) + 1;
       }
     });
 
-    setSuggestedDriver(driver);
-    setDriverDebts(debts);
+    const newHistory = [
+      {
+        date: new Date().toLocaleDateString(),
+        driver: suggestedDriver,
+        passengers: active,
+        by: user.email
+      },
+      ...history
+    ].slice(0, 20);
+
+    await setDoc(doc(db, "app", "state"), {
+      participants,
+      debts: newDebts,
+      history: newHistory
+    });
+
+    setSuggestedDriver(null);
+    setTodayPassengers({});
   };
 
-  // ------------------- CONFIRMAR VIAJE -------------------
-  const confirmTrip = async () => {
-    if (!suggestedDriver) return;
-    const newHistoryItem = {
-      date: new Date().toLocaleDateString(),
-      driver: suggestedDriver,
-      passengers: [...todayPassengers]
-    };
-    const newHistory = [newHistoryItem, ...history].slice(0, 20);
-    setHistory(newHistory);
-    await saveData({ history: newHistory });
-    logActivity(`${user.displayName} confirmó viaje. Conductor: ${suggestedDriver}`);
-    alert("Viaje confirmado");
-  };
+  /* ---------- UI ---------- */
+  if (!user) {
+    return (
+      <div className="login">
+        <h1>Polletecar</h1>
+        <button onClick={login}>Entrar con Google</button>
+      </div>
+    );
+  }
 
-  // ------------------- RESET -------------------
-  const resetAll = async () => {
-    if (!window.confirm("¿Seguro que quieres borrar todos los datos?")) return;
-    if (!window.confirm("¡Confirmación final! Se eliminarán TODOS los datos")) return;
-    setParticipants([]);
-    setTodayPassengers([]);
-    setSuggestedDriver("");
-    setHistory([]);
-    setActivity([]);
-    await saveData({ participants: [], todayPassengers: [], history: [], activity: [] });
-  };
-
-  // ------------------- ACTIVIDAD -------------------
-  const logActivity = async (message) => {
-    const newAct = [{ date: new Date().toLocaleString(), message }, ...activity].slice(0, 50);
-    setActivity(newAct);
-    await saveData({ activity: newAct });
-  };
-
-  // ------------------- RENDER -------------------
   return (
-    <div className="app-container">
-      <h1>Polletecar</h1>
+    <div className="app">
+      <header>
+        <h1>Polletecar</h1>
+        <span>{user.displayName}</span>
+        <button onClick={logout}>Salir</button>
+      </header>
 
-      {!user ? (
-        <button className="btn-login" onClick={login}>
-          Entrar con Google
-        </button>
-      ) : (
-        <div>
-          <p>Hola <strong>{user.displayName}</strong></p>
-          <button className="btn-logout" onClick={logout}>Salir</button>
+      <section>
+        <h2>Pasajeros de hoy</h2>
+        {participants.map(p => (
+          <label key={p}>
+            <input
+              type="checkbox"
+              checked={!!todayPassengers[p]}
+              onChange={() =>
+                setTodayPassengers(prev => ({ ...prev, [p]: !prev[p] }))
+              }
+            />
+            {p}
+          </label>
+        ))}
+      </section>
 
-          <h2>Participantes</h2>
-          <input
-            type="text"
-            placeholder="Añadir participante y Enter"
-            onKeyDown={(e) => e.key === "Enter" && addParticipant(e.target.value)}
-          />
-          <div className="participants">
-            {participants.map((p) => (
-              <div className="participant" key={p}>
-                {p}
-                <button onClick={() => toggleTodayPassenger(p)}>
-                  {todayPassengers.includes(p) ? "Quitar del coche" : "Va al coche"}
-                </button>
-                <button onClick={() => removeParticipant(p)}>Eliminar</button>
-              </div>
-            ))}
-          </div>
+      <button onClick={calculateSuggestion}>
+        Calcular sugerencia de conductor
+      </button>
 
-          <h2>Sugerencia de conductor</h2>
-          <p className="suggestion">
-            {suggestedDriver ? `Sugerencia: ${suggestedDriver}` : "Seleccione pasajeros para sugerir"}
-          </p>
-
-          {Object.keys(driverDebts).length > 0 && (
-            <div className="debts">
-              <h4>Deudas del conductor con pasajeros hoy:</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Pasajero</th>
-                    <th>Deuda viajes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {todayPassengers.filter((p) => p !== suggestedDriver).map((p) => (
-                    <tr key={p}>
-                      <td>{p}</td>
-                      <td>{driverDebts[suggestedDriver][p] || 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="buttons">
-            <button onClick={confirmTrip}>Confirmar viaje</button>
-            <button onClick={resetAll}>RESET TOTAL</button>
-          </div>
-
-          <h2>Historial de viajes (últimos 20)</h2>
-          <table className="history">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Conductor</th>
-                <th>Pasajeros</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((h, idx) => (
-                <tr key={idx}>
-                  <td>{h.date}</td>
-                  <td>{h.driver}</td>
-                  <td>{h.passengers.join(", ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h2>Actividad reciente</h2>
-          <ul className="activity">
-            {activity.map((a, idx) => (
-              <li key={idx}>
-                {a.date} - {a.message}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {suggestedDriver && (
+        <h3>Sugerencia de conductor: {suggestedDriver}</h3>
       )}
+
+      <button onClick={confirmTrip} disabled={!suggestedDriver}>
+        Confirmar viaje
+      </button>
+
+      <section>
+        <h2>Deudas</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Deudor</th>
+              <th>Acreedor</th>
+              <th>Viajes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(debts)
+              .filter(([, v]) => v > 0)
+              .map(([k, v]) => {
+                const [from, to] = k.split("__");
+                return (
+                  <tr key={k}>
+                    <td>{from}</td>
+                    <td>{to}</td>
+                    <td>{v}</td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Historial</h2>
+        {history.map((h, i) => (
+          <div key={i}>
+            {h.date} – {h.driver} – {h.passengers.join(", ")}
+          </div>
+        ))}
+      </section>
     </div>
   );
 }
+```
