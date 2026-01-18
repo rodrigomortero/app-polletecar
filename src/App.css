@@ -1,38 +1,142 @@
-body {
-  background: #f0f2f5;
-  font-family: Arial, sans-serif;
-}
-
-.app {
+/* Fondo general y tipografía */
+.App {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   max-width: 900px;
-  margin: auto;
+  margin: 0 auto;
   padding: 20px;
+  background: #f0f4f8;
+  color: #333;
 }
 
-section {
-  background: white;
-  padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 8px;
+/* Encabezados */
+h1, h2, h3 {
+  color: #1a202c;
+  margin-bottom: 10px;
 }
 
-.sugerencia {
-  border: 2px solid #0077ff;
+/* Botones */
+button {
+  padding: 6px 12px;
+  margin: 3px;
+  cursor: pointer;
+  border-radius: 5px;
+  border: none;
+  background-color: #4CAF50;
+  color: white;
+  font-weight: 500;
+  transition: 0.2s;
 }
 
-table {
-  width: 100%;
+button:hover {
+  background-color: #45a049;
+}
+
+/* Botón de reset */
+.reset-button {
+  background-color: #e53935;
+  color: white;
+  margin-top: 20px;
+}
+
+.reset-button:hover {
+  background-color: #d32f2f;
+}
+
+/* Inputs y selects */
+input[type="text"], select {
+  padding: 6px 8px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+/* Lista de participantes y checkboxes */
+ul, .historial-list {
+  list-style: none;
+  padding: 0;
+  margin: 5px 0 15px 0;
+}
+
+ul li, .historial-list li {
+  background-color: #fff;
+  padding: 6px 10px;
+  margin-bottom: 5px;
+  border-radius: 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Etiquetas de checkboxes */
+label {
+  display: block;
+  margin: 5px 0;
+  background: #fff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Tablas de deudas */
+.deudas-table {
   border-collapse: collapse;
+  width: 100%;
+  margin-top: 10px;
+  background: #fff;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-td, th {
+.deudas-table th, .deudas-table td {
   border: 1px solid #ddd;
-  padding: 6px;
+  padding: 8px;
   text-align: center;
 }
 
-.reset {
-  background: red;
+.deudas-table th {
+  background-color: #4CAF50;
   color: white;
+}
+
+.deudas-table tr:nth-child(even){
+  background-color: #f2f2f2;
+}
+
+.deudas-table tr:hover {
+  background-color: #ddd;
+}
+
+/* Historial */
+.historial-list li {
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 0.95rem;
+}
+
+/* Sección conductor sugerido */
+.conductor-sugerido {
+  background-color: #e0f7fa;
   padding: 10px;
+  margin: 15px 0;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.conductor-sugerido h2 {
+  margin-top: 0;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .App {
+    padding: 10px;
+  }
+  .deudas-table th, .deudas-table td {
+    padding: 6px;
+  }
+  ul li, .historial-list li {
+    font-size: 0.9rem;
+  }
 }
