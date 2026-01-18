@@ -9,9 +9,7 @@ import {
 import {
   doc,
   setDoc,
-  getDoc,
   onSnapshot,
-  updateDoc,
 } from "firebase/firestore";
 
 export default function App() {
@@ -31,7 +29,7 @@ export default function App() {
   };
   const logout = () => signOut(auth);
 
-  // Cargar datos desde Firestore en tiempo real
+  // Cargar datos desde Firestore
   useEffect(() => {
     if (!user) return;
     const docRef = doc(db, "appData", "estado");
@@ -46,7 +44,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Guardar estado en Firestore
+  // Guardar datos en Firestore
   const guardarDatos = async (nuevosDatos) => {
     if (!user) return;
     const docRef = doc(db, "appData", "estado");
@@ -55,8 +53,7 @@ export default function App() {
 
   // Añadir participante
   const agregarParticipante = async () => {
-    if (!nuevoParticipante || participantes.includes(nuevoParticipante))
-      return;
+    if (!nuevoParticipante || participantes.includes(nuevoParticipante)) return;
     const nuevos = [...participantes, nuevoParticipante];
     setParticipantes(nuevos);
     setNuevoParticipante("");
@@ -68,18 +65,18 @@ export default function App() {
     if (!nuevo) return;
     const nuevos = participantes.map((p) => (p === viejo ? nuevo : p));
     setParticipantes(nuevos);
-    setPasajerosDia(
-      pasajerosDia.map((p) => (p === viejo ? nuevo : p))
-    );
+    setPasajerosDia(pasajerosDia.map((p) => (p === viejo ? nuevo : p)));
     await guardarDatos({ participantes: nuevos });
   };
 
   // Eliminar participante con confirmación
   const eliminarParticipante = async (nombre) => {
     if (!window.confirm(`¿Seguro que quieres eliminar a ${nombre}?`)) return;
+    if (!window.confirm("¡Confirmar eliminación definitivamente!")) return;
     const nuevos = participantes.filter((p) => p !== nombre);
     setParticipantes(nuevos);
     setPasajerosDia(pasajerosDia.filter((p) => p !== nombre));
+
     // Eliminar deudas relacionadas
     const nuevasDeudas = { ...deudas };
     Object.keys(nuevasDeudas).forEach((clave) => {
@@ -89,7 +86,7 @@ export default function App() {
     await guardarDatos({ participantes: nuevos, deudas: nuevasDeudas });
   };
 
-  // Sugerir conductor según deudas netas
+  // Sugerir conductor: quien más debe a los demás pasajeros de hoy
   const sugerirConductor = () => {
     if (!pasajerosDia.length) return;
     let maxDeuda = -1;
@@ -111,9 +108,10 @@ export default function App() {
     setConductorSeleccionado(sugerido);
   };
 
-  // Confirmar viaje
+  // Confirmar viaje y actualizar deudas
   const confirmarViaje = async () => {
     if (!conductorSeleccionado) return alert("Selecciona un conductor");
+
     // Actualizar historial
     const nuevoHistorial = [
       { conductor: conductorSeleccionado, pasajeros: [...pasajerosDia], modificadoPor: user.displayName },
@@ -121,7 +119,7 @@ export default function App() {
     ].slice(0, 20);
     setHistorial(nuevoHistorial);
 
-    // Actualizar deudas
+    // Actualizar deudas netas
     const nuevasDeudas = { ...deudas };
     pasajerosDia.forEach((p) => {
       if (p === conductorSeleccionado) return;
@@ -130,11 +128,9 @@ export default function App() {
 
       if (!actual) {
         nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
-      } else if (actual.deudor === p) {
-        // Se cancela deuda
-        delete nuevasDeudas[clave];
       } else {
-        nuevasDeudas[clave] = { deudor: conductorSeleccionado, cantidad: 1 };
+        // Cancela deuda si es contraria
+        delete nuevasDeudas[clave];
       }
     });
 
@@ -146,7 +142,7 @@ export default function App() {
     alert("Viaje confirmado ✅");
   };
 
-  // Reset total con doble confirmación
+  // Reset total
   const resetTotal = async () => {
     if (!window.confirm("¿Seguro que quieres borrar todo?")) return;
     if (!window.confirm("¡Esto borrará TODO, confirmar de nuevo!")) return;
@@ -185,14 +181,10 @@ export default function App() {
         {participantes.map((p) => (
           <li key={p}>
             {p}{" "}
-            <button
-              onClick={() => {
-                const nuevo = prompt("Nuevo nombre:", p);
-                editarParticipante(p, nuevo);
-              }}
-            >
-              Editar
-            </button>{" "}
+            <button onClick={() => {
+              const nuevo = prompt("Nuevo nombre:", p);
+              editarParticipante(p, nuevo);
+            }}>Editar</button>{" "}
             <button onClick={() => eliminarParticipante(p)}>Eliminar</button>
           </li>
         ))}
@@ -207,9 +199,10 @@ export default function App() {
             onChange={(e) => {
               if (e.target.checked)
                 setPasajerosDia([...pasajerosDia, p]);
-              else setPasajerosDia(pasajerosDia.filter((x) => x !== p));
+              else
+                setPasajerosDia(pasajerosDia.filter(x => x !== p));
             }}
-          />
+          />{" "}
           {p}
         </label>
       ))}
@@ -223,18 +216,16 @@ export default function App() {
           <h2>Sugerencia: {conductorSugerido}</h2>
           <h3>Deudas del conductor con pasajeros de hoy:</h3>
           <ul>
-            {pasajerosDia.map((p) => {
+            {pasajerosDia.map(p => {
               if (p === conductorSugerido) return null;
               const clave = [p, conductorSugerido].sort().join("|");
               const info = deudas[clave];
               if (!info) return <li key={p}>{p}: 0</li>;
-              return (
-                <li key={p}>
-                  {info.deudor === conductorSugerido
-                    ? `${conductorSugerido} le debe ${info.cantidad} a ${p}`
-                    : `${p} le debe ${info.cantidad} a ${conductorSugerido}`}
-                </li>
-              );
+              return <li key={p}>
+                {info.deudor === conductorSugerido
+                  ? `${conductorSugerido} le debe ${info.cantidad} a ${p}`
+                  : `${p} le debe ${info.cantidad} a ${conductorSugerido}`}
+              </li>
             })}
           </ul>
 
@@ -242,12 +233,10 @@ export default function App() {
             Seleccionar conductor manualmente:
             <select
               value={conductorSeleccionado}
-              onChange={(e) => setConductorSeleccionado(e.target.value)}
+              onChange={e => setConductorSeleccionado(e.target.value)}
             >
-              {pasajerosDia.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
+              {pasajerosDia.map(p => (
+                <option key={p} value={p}>{p}</option>
               ))}
             </select>
           </label>
@@ -262,8 +251,7 @@ export default function App() {
       <ul>
         {Object.entries(deudas).map(([clave, info]) => (
           <li key={clave}>
-            {info.deudor} debe {info.cantidad} a{" "}
-            {clave.split("|").filter((x) => x !== info.deudor)[0]}
+            {info.deudor} debe {info.cantidad} a {clave.split("|").filter(x => x !== info.deudor)[0]}
           </li>
         ))}
       </ul>
@@ -272,15 +260,12 @@ export default function App() {
       <ul>
         {historial.map((v, i) => (
           <li key={i}>
-            {v.conductor} llevó a {v.pasajeros.join(", ")}{" "}
-            {v.modificadoPor ? `(modificado por: ${v.modificadoPor})` : ""}
+            {v.conductor} llevó a {v.pasajeros.join(", ")} {v.modificadoPor ? `(modificado por: ${v.modificadoPor})` : ""}
           </li>
         ))}
       </ul>
 
-      <button onClick={resetTotal} style={{ marginTop: "20px", color: "red" }}>
-        RESET TOTAL
-      </button>
+      <button onClick={resetTotal} style={{ marginTop: "20px", color: "red" }}>RESET TOTAL</button>
     </div>
   );
 }
