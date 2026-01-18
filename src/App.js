@@ -1,84 +1,74 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 import { auth, provider, db } from "./firebase";
-import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  onSnapshot
-} from "firebase/firestore";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+
+/*
+MODELO DE DEUDA:
+debts["A__B"] = 2  => A debe 2 viajes a B
+*/
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [participants, setParticipants] = useState([]);
-  const [todayPassengers, setTodayPassengers] = useState({});
+  const [activeToday, setActiveToday] = useState({});
   const [debts, setDebts] = useState({});
-  const [suggestedDriver, setSuggestedDriver] = useState(null);
   const [history, setHistory] = useState([]);
+  const [suggestedDriver, setSuggestedDriver] = useState(null);
 
   /* ---------- AUTH ---------- */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
-      } else {
-        setUser(null);
-      }
+      setUser(u || null);
     });
     return () => unsub();
   }, []);
 
-  const login = () => {
-    signInWithPopup(auth, provider);
-  };
+  const login = () => signInWithPopup(auth, provider);
+  const logout = () => signOut(auth);
 
-  const logout = () => {
-    signOut(auth);
-  };
-
-  /* ---------- LOAD DATA ---------- */
+  /* ---------- LOAD FIRESTORE ---------- */
   useEffect(() => {
     if (!user) return;
 
     const unsub = onSnapshot(doc(db, "app", "state"), (snap) => {
       if (!snap.exists()) return;
-      const data = snap.data();
-      setParticipants(data.participants || []);
-      setDebts(data.debts || {});
-      setHistory(data.history || []);
+      const d = snap.data();
+      setParticipants(d.participants || []);
+      setDebts(d.debts || {});
+      setHistory(d.history || []);
     });
 
     return () => unsub();
   }, [user]);
 
   /* ---------- HELPERS ---------- */
-  const debtKey = (from, to) => `${from}__${to}`;
+  const key = (a, b) => `${a}__${b}`;
+  const getDebt = (a, b) => debts[key(a, b)] || 0;
 
-  const getDebt = (from, to) => debts[debtKey(from, to)] || 0;
-
-  /* ---------- SUGGEST DRIVER ---------- */
+  /* ---------- DRIVER SUGGESTION ---------- */
   const calculateSuggestion = () => {
-    const active = participants.filter((p) => todayPassengers[p]);
-
+    const active = participants.filter((p) => activeToday[p]);
     if (active.length < 2) {
       setSuggestedDriver(null);
       return;
     }
 
-    let scores = {};
-    active.forEach((p) => {
-      scores[p] = 0;
-    });
+    // score > 0 => debe al grupo
+    let score = {};
+    active.forEach((p) => (score[p] = 0));
 
     active.forEach((a) => {
       active.forEach((b) => {
         if (a !== b) {
-          scores[a] -= getDebt(a, b);
+          score[a] += getDebt(a, b);
         }
       });
     });
 
-    const sorted = Object.entries(scores).sort((a, b) => a[1] - b[1]);
+    // el que MÁS debe conduce
+    const sorted = Object.entries(score).sort((a, b) => b[1] - a[1]);
     setSuggestedDriver(sorted[0][0]);
   };
 
@@ -86,19 +76,19 @@ export default function App() {
   const confirmTrip = async () => {
     if (!suggestedDriver) return;
 
-    const active = participants.filter((p) => todayPassengers[p]);
+    const active = participants.filter((p) => activeToday[p]);
     let newDebts = { ...debts };
 
     active.forEach((p) => {
       if (p === suggestedDriver) return;
 
-      const k1 = debtKey(p, suggestedDriver);
-      const k2 = debtKey(suggestedDriver, p);
+      const payKey = key(p, suggestedDriver);
+      const oweKey = key(suggestedDriver, p);
 
-      if ((newDebts[k1] || 0) > 0) {
-        newDebts[k1] -= 1;
+      if ((newDebts[payKey] || 0) > 0) {
+        newDebts[payKey] -= 1;
       } else {
-        newDebts[k2] = (newDebts[k2] || 0) + 1;
+        newDebts[oweKey] = (newDebts[oweKey] || 0) + 1;
       }
     });
 
@@ -118,8 +108,8 @@ export default function App() {
       history: newHistory
     });
 
+    setActiveToday({});
     setSuggestedDriver(null);
-    setTodayPassengers({});
   };
 
   /* ---------- UI ---------- */
@@ -136,22 +126,21 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Polletecar</h1>
-        <span>{user.displayName}</span>
-        <button onClick={logout}>Salir</button>
+        <div>
+          {user.displayName}
+          <button onClick={logout}>Salir</button>
+        </div>
       </header>
 
       <section>
-        <h2>Pasajeros de hoy</h2>
+        <h2>¿Quién va hoy?</h2>
         {participants.map((p) => (
-          <label key={p} style={{ display: "block" }}>
+          <label key={p} className="check">
             <input
               type="checkbox"
-              checked={!!todayPassengers[p]}
+              checked={!!activeToday[p]}
               onChange={() =>
-                setTodayPassengers((prev) => ({
-                  ...prev,
-                  [p]: !prev[p]
-                }))
+                setActiveToday((prev) => ({ ...prev, [p]: !prev[p] }))
               }
             />
             {p}
@@ -160,14 +149,14 @@ export default function App() {
       </section>
 
       <button onClick={calculateSuggestion}>
-        Calcular sugerencia de conductor
+        Calcular sugerencia
       </button>
 
       {suggestedDriver && (
-        <h3>Sugerencia de conductor: {suggestedDriver}</h3>
+        <h3>Debe conducir: {suggestedDriver}</h3>
       )}
 
-      <button onClick={confirmTrip} disabled={!suggestedDriver}>
+      <button disabled={!suggestedDriver} onClick={confirmTrip}>
         Confirmar viaje
       </button>
 
@@ -202,7 +191,7 @@ export default function App() {
         <h2>Historial</h2>
         {history.map((h, i) => (
           <div key={i}>
-            {h.date} – {h.driver} – {h.passengers.join(", ")}
+            {h.date} — <b>{h.driver}</b> — {h.passengers.join(", ")}
           </div>
         ))}
       </section>
