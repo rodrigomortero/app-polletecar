@@ -1,17 +1,11 @@
-```javascript
 import React, { useEffect, useState } from "react";
 import "./App.css";
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import {
-  collection,
   doc,
   setDoc,
-  getDoc,
-  updateDoc,
-  addDoc,
-  onSnapshot,
-  serverTimestamp
+  onSnapshot
 } from "firebase/firestore";
 
 export default function App() {
@@ -24,14 +18,23 @@ export default function App() {
 
   /* ---------- AUTH ---------- */
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      if (u) setUser(u);
-      else setUser(null);
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+      } else {
+        setUser(null);
+      }
     });
+    return () => unsub();
   }, []);
 
-  const login = () => signInWithPopup(auth, provider);
-  const logout = () => signOut(auth);
+  const login = () => {
+    signInWithPopup(auth, provider);
+  };
+
+  const logout = () => {
+    signOut(auth);
+  };
 
   /* ---------- LOAD DATA ---------- */
   useEffect(() => {
@@ -45,7 +48,7 @@ export default function App() {
       setHistory(data.history || []);
     });
 
-    return unsub;
+    return () => unsub();
   }, [user]);
 
   /* ---------- HELPERS ---------- */
@@ -55,35 +58,38 @@ export default function App() {
 
   /* ---------- SUGGEST DRIVER ---------- */
   const calculateSuggestion = () => {
-    const active = participants.filter(p => todayPassengers[p]);
+    const active = participants.filter((p) => todayPassengers[p]);
 
-    if (active.length < 2) return;
+    if (active.length < 2) {
+      setSuggestedDriver(null);
+      return;
+    }
 
     let scores = {};
-    active.forEach(p => scores[p] = 0);
+    active.forEach((p) => {
+      scores[p] = 0;
+    });
 
-    active.forEach(a => {
-      active.forEach(b => {
+    active.forEach((a) => {
+      active.forEach((b) => {
         if (a !== b) {
           scores[a] -= getDebt(a, b);
         }
       });
     });
 
-    const worst = Object.entries(scores)
-      .sort((a, b) => a[1] - b[1])[0][0];
-
-    setSuggestedDriver(worst);
+    const sorted = Object.entries(scores).sort((a, b) => a[1] - b[1]);
+    setSuggestedDriver(sorted[0][0]);
   };
 
   /* ---------- CONFIRM TRIP ---------- */
   const confirmTrip = async () => {
     if (!suggestedDriver) return;
 
-    const active = participants.filter(p => todayPassengers[p]);
+    const active = participants.filter((p) => todayPassengers[p]);
     let newDebts = { ...debts };
 
-    active.forEach(p => {
+    active.forEach((p) => {
       if (p === suggestedDriver) return;
 
       const k1 = debtKey(p, suggestedDriver);
@@ -136,13 +142,16 @@ export default function App() {
 
       <section>
         <h2>Pasajeros de hoy</h2>
-        {participants.map(p => (
-          <label key={p}>
+        {participants.map((p) => (
+          <label key={p} style={{ display: "block" }}>
             <input
               type="checkbox"
               checked={!!todayPassengers[p]}
               onChange={() =>
-                setTodayPassengers(prev => ({ ...prev, [p]: !prev[p] }))
+                setTodayPassengers((prev) => ({
+                  ...prev,
+                  [p]: !prev[p]
+                }))
               }
             />
             {p}
@@ -163,7 +172,7 @@ export default function App() {
       </button>
 
       <section>
-        <h2>Deudas</h2>
+        <h2>Tabla de deudas</h2>
         <table>
           <thead>
             <tr>
@@ -200,4 +209,3 @@ export default function App() {
     </div>
   );
 }
-```
