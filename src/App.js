@@ -2,18 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  setDoc
-} from "firebase/firestore";
-
-/*
-MODELO DE DEUDAS:
-deudas[A][B] > 0  => B debe a A
-deudas[A][B] < 0  => A debe a B
-Siempre: deudas[A][B] === -deudas[B][A]
-*/
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -36,19 +25,13 @@ export default function App() {
     });
   }, []);
 
-  const login = async () => {
-    await signInWithPopup(auth, provider);
-  };
+  const login = async () => await signInWithPopup(auth, provider);
+  const logout = async () => await signOut(auth);
 
-  const logout = async () => {
-    await signOut(auth);
-  };
-
-  /* ================= FIRESTORE ================= */
+  /* ================= FIREBASE ================= */
 
   const cargarDatos = async (uid) => {
-    const ref = doc(db, "datos", uid);
-    const snap = await getDoc(ref);
+    const snap = await getDoc(doc(db, "datos", uid));
     if (snap.exists()) {
       const d = snap.data();
       setParticipantes(d.participantes || []);
@@ -72,64 +55,39 @@ export default function App() {
     guardarDatos();
   }, [participantes, deudas, viajes, logs]);
 
-  /* ================= UTILIDADES ================= */
+  /* ================= LOGS ================= */
 
-  const registrarLog = (texto) => {
+  const log = (accion, detalle) => {
     setLogs(l => [{
-      texto,
       usuario: user.email,
-      fecha: new Date().toISOString()
+      fecha: new Date().toLocaleString(),
+      accion,
+      detalle
     }, ...l]);
-  };
-
-  const inicializarDeudas = (nombres) => {
-    const d = {};
-    nombres.forEach(a => {
-      d[a] = {};
-      nombres.forEach(b => {
-        d[a][b] = 0;
-      });
-    });
-    return d;
   };
 
   /* ================= PARTICIPANTES ================= */
 
   const agregarParticipante = () => {
-    if (!nuevoNombre.trim()) return;
-    if (participantes.includes(nuevoNombre)) return;
+    if (!nuevoNombre.trim() || participantes.includes(nuevoNombre)) return;
 
-    const nuevos = [...participantes, nuevoNombre];
-    setParticipantes(nuevos);
-
-    const d = structuredClone(deudas);
-    nuevos.forEach(a => {
-      if (!d[a]) d[a] = {};
-      nuevos.forEach(b => {
-        if (d[a][b] === undefined) d[a][b] = 0;
+    setParticipantes(p => [...p, nuevoNombre]);
+    setDeudas(d => {
+      const nuevo = structuredClone(d);
+      nuevo[nuevoNombre] = {};
+      [...participantes, nuevoNombre].forEach(p => {
+        if (!nuevo[p]) nuevo[p] = {};
+        nuevo[p][nuevoNombre] = 0;
+        nuevo[nuevoNombre][p] = 0;
       });
+      return nuevo;
     });
 
-    setDeudas(d);
-    registrarLog(`Añadido participante: ${nuevoNombre}`);
+    log("AÑADIR PARTICIPANTE", `Se añadió "${nuevoNombre}"`);
     setNuevoNombre("");
   };
 
-  const eliminarParticipante = (nombre) => {
-    if (!window.confirm(`Eliminar a ${nombre}?`)) return;
-    if (!window.confirm("Esto borrará TODAS sus deudas. ¿Seguro?")) return;
-
-    const nuevos = participantes.filter(p => p !== nombre);
-    const d = structuredClone(deudas);
-    delete d[nombre];
-    nuevos.forEach(p => delete d[p][nombre]);
-
-    setParticipantes(nuevos);
-    setDeudas(d);
-    registrarLog(`Eliminado participante: ${nombre}`);
-  };
-
-  /* ================= SUGERENCIA DE CONDUCTOR ================= */
+  /* ================= SUGERENCIA ================= */
 
   const sugerirConductor = () => {
     let candidato = null;
@@ -138,9 +96,7 @@ export default function App() {
     pasajerosHoy.forEach(p => {
       let deuda = 0;
       pasajerosHoy.forEach(o => {
-        if (p !== o && deudas[o]?.[p] > 0) {
-          deuda += deudas[o][p];
-        }
+        if (o !== p && deudas[o]?.[p] > 0) deuda += deudas[o][p];
       });
       if (deuda > maxDeuda) {
         maxDeuda = deuda;
@@ -151,73 +107,34 @@ export default function App() {
     return candidato;
   };
 
-  const conductorSugerido = sugerirConductor();
-  const conductorFinal = conductorManual || conductorSugerido;
+  const conductorFinal = conductorManual || sugerirConductor();
 
   /* ================= CONFIRMAR VIAJE ================= */
 
   const confirmarViaje = () => {
-    if (!conductorFinal) return;
+    if (!conductorFinal || pasajerosHoy.length < 2) return;
 
-    const d = structuredClone(deudas);
+    const nuevasDeudas = structuredClone(deudas);
 
     pasajerosHoy.forEach(p => {
-      if (p === conductorFinal) return;
-      d[conductorFinal][p] += 1;
-      d[p][conductorFinal] -= 1;
+      if (p !== conductorFinal) {
+        nuevasDeudas[conductorFinal][p] += 1;
+        nuevasDeudas[p][conductorFinal] -= 1;
+      }
     });
 
-    const nuevoViaje = {
-      fecha: new Date().toISOString(),
-      pasajeros: pasajerosHoy,
-      conductor: conductorFinal
+    const viaje = {
+      fecha: new Date().toLocaleDateString(),
+      conductorConfirmado: conductorFinal,
+      pasajeros: pasajerosHoy
     };
 
-    setDeudas(d);
-    setViajes(v => [nuevoViaje, ...v].slice(0, 20));
-    registrarLog(`Confirmado viaje con conductor ${conductorFinal}`);
+    setDeudas(nuevasDeudas);
+    setViajes(v => [viaje, ...v].slice(0, 20));
+    log("CONFIRMAR VIAJE", `Conductor: ${conductorFinal}`);
 
     setPasajerosHoy([]);
     setConductorManual(null);
-  };
-
-  /* ================= EDITAR VIAJES ================= */
-
-  const recalcularDesdeCero = (listaViajes) => {
-    const d = inicializarDeudas(participantes);
-    listaViajes.slice().reverse().forEach(v => {
-      v.pasajeros.forEach(p => {
-        if (p !== v.conductor) {
-          d[v.conductor][p] += 1;
-          d[p][v.conductor] -= 1;
-        }
-      });
-    });
-    return d;
-  };
-
-  const editarViaje = (index, nuevoConductor) => {
-    if (index >= 5) return;
-
-    const copia = [...viajes];
-    copia[index].conductor = nuevoConductor;
-
-    setViajes(copia);
-    setDeudas(recalcularDesdeCero(copia));
-    registrarLog(`Editado viaje ${index + 1}`);
-  };
-
-  /* ================= RESET TOTAL ================= */
-
-  const resetTotal = () => {
-    if (!window.confirm("⚠️ BORRAR TODO. ¿Continuar?")) return;
-    if (!window.confirm("❌ Última confirmación. ¿Seguro?")) return;
-
-    setParticipantes([]);
-    setPasajerosHoy([]);
-    setDeudas({});
-    setViajes([]);
-    setLogs([]);
   };
 
   /* ================= UI ================= */
@@ -241,19 +158,9 @@ export default function App() {
 
       <section>
         <h2>Participantes</h2>
-        <input
-          value={nuevoNombre}
-          onChange={e => setNuevoNombre(e.target.value)}
-          placeholder="Nombre"
-        />
+        <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} />
         <button onClick={agregarParticipante}>Añadir</button>
-
-        {participantes.map(p => (
-          <div key={p}>
-            {p}
-            <button onClick={() => eliminarParticipante(p)}>❌</button>
-          </div>
-        ))}
+        {participantes.map(p => <div key={p}>{p}</div>)}
       </section>
 
       <section>
@@ -277,23 +184,16 @@ export default function App() {
       <section>
         <h2>Sugerencia de conductor</h2>
         <strong>{conductorFinal || "—"}</strong>
-
-        {pasajerosHoy.map(p => (
-          <button key={p} onClick={() => setConductorManual(p)}>
-            Forzar {p}
-          </button>
-        ))}
-
         <button onClick={confirmarViaje}>Confirmar viaje</button>
       </section>
 
       <section>
         <h2>Deudas</h2>
-        {participantes.map(a =>
-          participantes.map(b =>
-            a !== b && deudas[a]?.[b] > 0 ? (
-              <div key={a + b}>
-                {b} debe {deudas[a][b]} viaje(s) a {a}
+        {Object.entries(deudas).map(([acreedor, obj]) =>
+          Object.entries(obj).map(([deudor, v]) =>
+            v > 0 ? (
+              <div key={acreedor + deudor}>
+                {deudor} → {acreedor} : {v}
               </div>
             ) : null
           )
@@ -301,32 +201,22 @@ export default function App() {
       </section>
 
       <section>
-        <h2>Historial (20)</h2>
+        <h2>Historial</h2>
         {viajes.map((v, i) => (
           <div key={i}>
-            {v.fecha.slice(0, 10)} – {v.conductor}
-            {i < 5 &&
-              v.pasajeros.map(p => (
-                <button key={p} onClick={() => editarViaje(i, p)}>
-                  Cambiar a {p}
-                </button>
-              ))}
+            {v.fecha} – Conductor: <strong>{v.conductorConfirmado}</strong>
           </div>
         ))}
       </section>
 
       <section>
         <h2>Actividad</h2>
-        {logs.slice(0, 20).map((l, i) => (
+        {logs.map((l, i) => (
           <div key={i}>
-            {l.fecha.slice(0, 19)} – {l.usuario} – {l.texto}
+            [{l.fecha}] {l.usuario}: {l.accion} → {l.detalle}
           </div>
         ))}
       </section>
-
-      <button className="reset" onClick={resetTotal}>
-        RESET TOTAL
-      </button>
     </div>
   );
 }
