@@ -1,16 +1,8 @@
 import React, { useState, useEffect } from "react";
 import "./App.css";
 import { auth, provider, db } from "./firebase";
-import {
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-} from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  onSnapshot,
-} from "firebase/firestore";
+import { signInWithPopup, signOut } from "firebase/auth";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -22,14 +14,14 @@ export default function App() {
   const [historial, setHistorial] = useState([]);
   const [nuevoParticipante, setNuevoParticipante] = useState("");
 
-  // Autenticación
+  // LOGIN GOOGLE
   const login = async () => {
     const result = await signInWithPopup(auth, provider);
     setUser(result.user);
   };
   const logout = () => signOut(auth);
 
-  // Cargar datos desde Firestore
+  // Cargar datos de Firebase
   useEffect(() => {
     if (!user) return;
     const docRef = doc(db, "appData", "estado");
@@ -44,7 +36,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Guardar datos en Firestore
+  // Guardar datos en Firebase
   const guardarDatos = async (nuevosDatos) => {
     if (!user) return;
     const docRef = doc(db, "appData", "estado");
@@ -63,16 +55,17 @@ export default function App() {
   // Editar participante
   const editarParticipante = async (viejo, nuevo) => {
     if (!nuevo) return;
+    if (!window.confirm(`Confirmar cambio de "${viejo}" a "${nuevo}"`)) return;
     const nuevos = participantes.map((p) => (p === viejo ? nuevo : p));
     setParticipantes(nuevos);
     setPasajerosDia(pasajerosDia.map((p) => (p === viejo ? nuevo : p)));
     await guardarDatos({ participantes: nuevos });
   };
 
-  // Eliminar participante con confirmación
+  // Eliminar participante con doble confirmación
   const eliminarParticipante = async (nombre) => {
     if (!window.confirm(`¿Seguro que quieres eliminar a ${nombre}?`)) return;
-    if (!window.confirm("¡Confirmar eliminación definitivamente!")) return;
+    if (!window.confirm("¡Confirmar eliminación definitiva!")) return;
     const nuevos = participantes.filter((p) => p !== nombre);
     setParticipantes(nuevos);
     setPasajerosDia(pasajerosDia.filter((p) => p !== nombre));
@@ -86,7 +79,7 @@ export default function App() {
     await guardarDatos({ participantes: nuevos, deudas: nuevasDeudas });
   };
 
-  // Sugerir conductor: quien más debe a los demás pasajeros de hoy
+  // Sugerir conductor: el que más debe a los demás pasajeros de hoy
   const sugerirConductor = () => {
     if (!pasajerosDia.length) return;
     let maxDeuda = -1;
@@ -108,29 +101,33 @@ export default function App() {
     setConductorSeleccionado(sugerido);
   };
 
-  // Confirmar viaje y actualizar deudas
+  // Confirmar viaje y actualizar deudas correctamente (netas)
   const confirmarViaje = async () => {
     if (!conductorSeleccionado) return alert("Selecciona un conductor");
 
-    // Actualizar historial
     const nuevoHistorial = [
       { conductor: conductorSeleccionado, pasajeros: [...pasajerosDia], modificadoPor: user.displayName },
       ...historial,
     ].slice(0, 20);
     setHistorial(nuevoHistorial);
 
-    // Actualizar deudas netas
     const nuevasDeudas = { ...deudas };
+
     pasajerosDia.forEach((p) => {
       if (p === conductorSeleccionado) return;
+
       const clave = [p, conductorSeleccionado].sort().join("|");
       const actual = nuevasDeudas[clave];
 
       if (!actual) {
         nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
       } else {
-        // Cancela deuda si es contraria
-        delete nuevasDeudas[clave];
+        // Cancelar la deuda si es contraria
+        if (actual.deudor === conductorSeleccionado) {
+          delete nuevasDeudas[clave];
+        } else {
+          delete nuevasDeudas[clave];
+        }
       }
     });
 
@@ -174,7 +171,6 @@ export default function App() {
         placeholder="Nuevo participante"
         value={nuevoParticipante}
         onChange={(e) => setNuevoParticipante(e.target.value)}
-        autoComplete="off"
       />
       <button onClick={agregarParticipante}>Añadir</button>
       <ul>
@@ -248,24 +244,36 @@ export default function App() {
       )}
 
       <h2>Deudas generales</h2>
-      <ul>
-        {Object.entries(deudas).map(([clave, info]) => (
-          <li key={clave}>
-            {info.deudor} debe {info.cantidad} a {clave.split("|").filter(x => x !== info.deudor)[0]}
-          </li>
-        ))}
-      </ul>
+      <table className="deudas-table">
+        <thead>
+          <tr>
+            <th>Deudor</th>
+            <th>Deuda</th>
+            <th>Acreedor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(deudas).map(([clave, info]) => (
+            <tr key={clave}>
+              <td>{info.deudor}</td>
+              <td>{info.cantidad}</td>
+              <td>{clave.split("|").filter(x => x !== info.deudor)[0]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <h2>Historial últimos 20 viajes</h2>
-      <ul>
+      <ul className="historial-list">
         {historial.map((v, i) => (
           <li key={i}>
-            {v.conductor} llevó a {v.pasajeros.join(", ")} {v.modificadoPor ? `(modificado por: ${v.modificadoPor})` : ""}
+            {v.conductor} llevó a {v.pasajeros.join(", ")}
+            {v.modificadoPor ? ` (modificado por: ${v.modificadoPor})` : ""}
           </li>
         ))}
       </ul>
 
-      <button onClick={resetTotal} style={{ marginTop: "20px", color: "red" }}>RESET TOTAL</button>
+      <button className="reset-button" onClick={resetTotal}>RESET TOTAL</button>
     </div>
   );
 }
