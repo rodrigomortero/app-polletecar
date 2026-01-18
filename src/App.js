@@ -16,11 +16,8 @@ function App() {
 
   // --- Google Auth ---
   const login = async () => {
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      alert("Error de login: " + err.message);
-    }
+    try { await signInWithPopup(auth, provider); } 
+    catch (err) { alert("Error login: " + err.message); }
   };
   const logout = async () => await signOut(auth);
 
@@ -48,10 +45,7 @@ function App() {
   const agregarParticipante = async () => {
     const nombre = nuevoParticipante.trim();
     if (!nombre) return;
-    if (participantes.includes(nombre)) {
-      alert("El participante ya existe");
-      return;
-    }
+    if (participantes.includes(nombre)) return alert("Participante ya existe");
     const nuevaLista = [...participantes, nombre];
     setParticipantes(nuevaLista);
     setNuevoParticipante("");
@@ -82,14 +76,18 @@ function App() {
     let sugerido = pasajerosDia[0];
 
     pasajerosDia.forEach(p => {
-      let total = 0;
+      let totalDeuda = 0;
       pasajerosDia.forEach(q => {
         if (p === q) return;
         const clave = [p, q].sort().join("|");
-        total += deudas[clave]?.cantidad || 0;
+        const info = deudas[clave];
+        if (info) {
+          if (info.deudor === p) totalDeuda += info.cantidad; // p debe a q
+          else totalDeuda -= info.cantidad; // q debe a p
+        }
       });
-      if (total > maxDeuda) {
-        maxDeuda = total;
+      if (totalDeuda > maxDeuda) {
+        maxDeuda = totalDeuda;
         sugerido = p;
       }
     });
@@ -101,46 +99,38 @@ function App() {
   const confirmarViaje = async () => {
     if (!conductorSugerido) return alert("Selecciona conductor");
 
-    try {
-      // Actualizar deudas netas
-      const nuevasDeudas = {...deudas};
-      pasajerosDia.forEach(p => {
-        if (p === conductorSugerido) return;
+    const nuevasDeudas = {...deudas};
 
-        const clave = [p, conductorSugerido].sort().join("|");
-
-        // Si ya existe deuda, restamos para devolver viajes
-        if (nuevasDeudas[clave]) {
-          const info = nuevasDeudas[clave];
-          if (info.deudor === conductorSugerido) {
-            // conductor devuelve deuda
-            delete nuevasDeudas[clave];
-          } else {
-            info.cantidad += 1;
-          }
+    // Ajustar deudas según conductor
+    pasajerosDia.forEach(p => {
+      if (p === conductorSugerido) return;
+      const clave = [p, conductorSugerido].sort().join("|");
+      const info = nuevasDeudas[clave];
+      if (info) {
+        // Si p debía al conductor, se anula deuda
+        if (info.deudor === p) {
+          delete nuevasDeudas[clave];
         } else {
-          nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
+          // conductor adquirirá deuda con p
+          info.cantidad += 1;
+          info.deudor = conductorSugerido;
         }
-      });
+      } else {
+        nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
+      }
+    });
 
-      await setDoc(doc(db, "deudas", "global"), nuevasDeudas);
-      setDeudas(nuevasDeudas);
+    setDeudas(nuevasDeudas);
+    await setDoc(doc(db, "deudas", "global"), nuevasDeudas);
 
-      // Actualizar historial
-      const nuevoHistorial = [
-        { fecha: new Date().toISOString(), conductor: conductorSugerido, pasajeros: [...pasajerosDia] },
-        ...historial.slice(0, 19)
-      ];
-      await setDoc(doc(db, "historial", "viajes"), { viajes: nuevoHistorial });
-      setHistorial(nuevoHistorial);
+    const nuevoHistorial = [
+      { fecha: new Date().toISOString(), conductor: conductorSugerido, pasajeros: [...pasajerosDia] },
+      ...historial.slice(0, 19)
+    ];
+    setHistorial(nuevoHistorial);
+    await setDoc(doc(db, "historial", "viajes"), { viajes: nuevoHistorial });
 
-      // Limpiar selección del día
-      setPasajerosDia([]);
-
-    } catch (err) {
-      console.error("Error al confirmar viaje:", err);
-      alert("Error al confirmar viaje. Revisa la consola.");
-    }
+    setPasajerosDia([]);
   };
 
   return (
@@ -163,7 +153,6 @@ function App() {
               />
               <button onClick={agregarParticipante}>Agregar</button>
             </div>
-
             <ul>
               {participantes.map(p => (
                 <li key={p}>
@@ -197,12 +186,12 @@ function App() {
                 <ul>
                   {pasajerosDia.filter(p => p !== conductorSugerido).map(p => {
                     const clave = [p, conductorSugerido].sort().join("|");
-                    const cantidad = deudas[clave]?.cantidad || 0;
-                    return (
-                      <li key={p}>
-                        {conductorSugerido} → {p}: {cantidad} viaje(s)
-                      </li>
-                    );
+                    const info = deudas[clave];
+                    let cantidad = 0;
+                    if (info) {
+                      cantidad = info.deudor === conductorSugerido ? info.cantidad : 0;
+                    }
+                    return <li key={p}>{conductorSugerido} → {p}: {cantidad} viaje(s)</li>;
                   })}
                 </ul>
               </div>
@@ -210,34 +199,29 @@ function App() {
           )}
 
           <h2>Deudas globales</h2>
-          <table className="deudas-table">
+          <table>
             <thead>
-              <tr>
-                <th>Deudor</th>
-                <th>Acreedor</th>
-                <th>Cantidad</th>
-              </tr>
+              <tr><th>Deudor</th><th>Acreedor</th><th>Cantidad</th></tr>
             </thead>
             <tbody>
-              {Object.entries(deudas).map(([clave, valor]) => {
-                const [a, b] = clave.split("|");
+              {Object.entries(deudas).map(([clave, info]) => {
+                const [a,b] = clave.split("|");
+                const acreedor = info.deudor === a ? b : a;
                 return (
                   <tr key={clave}>
-                    <td>{valor.deudor}</td>
-                    <td>{valor.deudor === a ? b : a}</td>
-                    <td>{valor.cantidad}</td>
+                    <td>{info.deudor}</td>
+                    <td>{acreedor}</td>
+                    <td>{info.cantidad}</td>
                   </tr>
-                );
+                )
               })}
             </tbody>
           </table>
 
           <h2>Historial últimos 20 viajes</h2>
-          <ul className="historial-list">
+          <ul>
             {historial.map((v, idx) => (
-              <li key={idx}>
-                {v.fecha.split("T")[0]}: Conductor → {v.conductor}, Pasajeros → {v.pasajeros.join(", ")}
-              </li>
+              <li key={idx}>{v.fecha.split("T")[0]}: Conductor → {v.conductor}, Pasajeros → {v.pasajeros.join(", ")}</li>
             ))}
           </ul>
         </>
