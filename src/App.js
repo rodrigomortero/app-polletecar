@@ -79,7 +79,7 @@ export default function App() {
     await guardarDatos({ participantes: nuevos, deudas: nuevasDeudas });
   };
 
-  // Sugerir conductor: el que más debe a los demás pasajeros de hoy
+  // Sugerir conductor: quien más debe a los demás pasajeros del día
   const sugerirConductor = () => {
     if (!pasajerosDia.length) return;
     let maxDeuda = -1;
@@ -101,7 +101,7 @@ export default function App() {
     setConductorSeleccionado(sugerido);
   };
 
-  // Confirmar viaje y actualizar deudas correctamente (netas)
+  // Confirmar viaje y actualizar deudas (netas)
   const confirmarViaje = async () => {
     if (!conductorSeleccionado) return alert("Selecciona un conductor");
 
@@ -115,14 +115,13 @@ export default function App() {
 
     pasajerosDia.forEach((p) => {
       if (p === conductorSeleccionado) return;
-
       const clave = [p, conductorSeleccionado].sort().join("|");
       const actual = nuevasDeudas[clave];
 
+      // Deuda neta: si el otro debía, se cancela, si no se añade
       if (!actual) {
         nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
       } else {
-        // Cancelar la deuda si es contraria
         if (actual.deudor === conductorSeleccionado) {
           delete nuevasDeudas[clave];
         } else {
@@ -208,7 +207,7 @@ export default function App() {
       </div>
 
       {conductorSugerido && (
-        <div>
+        <div className="conductor-sugerido">
           <h2>Sugerencia: {conductorSugerido}</h2>
           <h3>Deudas del conductor con pasajeros de hoy:</h3>
           <ul>
