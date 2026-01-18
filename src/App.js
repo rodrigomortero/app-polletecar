@@ -8,6 +8,7 @@ import "./App.css";
 function App() {
   const [user, setUser] = useState(null);
   const [participantes, setParticipantes] = useState([]);
+  const [nuevoParticipante, setNuevoParticipante] = useState("");
   const [pasajerosDia, setPasajerosDia] = useState([]);
   const [conductorSugerido, setConductorSugerido] = useState("");
   const [deudas, setDeudas] = useState({});
@@ -28,7 +29,7 @@ function App() {
     return () => unsub();
   }, []);
 
-  // --- Cargar participantes, deudas e historial desde Firestore ---
+  // --- Cargar datos desde Firestore ---
   useEffect(() => {
     const fetchData = async () => {
       const partSnap = await getDoc(doc(db, "participantes", "global"));
@@ -43,10 +44,40 @@ function App() {
     fetchData();
   }, []);
 
-  // --- Sugerir conductor ---
+  // --- Agregar participante ---
+  const agregarParticipante = async () => {
+    const nombre = nuevoParticipante.trim();
+    if (!nombre) return;
+    if (participantes.includes(nombre)) {
+      alert("El participante ya existe");
+      return;
+    }
+    const nuevaLista = [...participantes, nombre];
+    setParticipantes(nuevaLista);
+    setNuevoParticipante("");
+    await setDoc(doc(db, "participantes", "global"), { lista: nuevaLista });
+  };
+
+  // --- Eliminar participante con confirmación ---
+  const eliminarParticipante = async (nombre) => {
+    if (!window.confirm(`¿Seguro que quieres eliminar a ${nombre}?`)) return;
+    const nuevaLista = participantes.filter(p => p !== nombre);
+    setParticipantes(nuevaLista);
+    await setDoc(doc(db, "participantes", "global"), { lista: nuevaLista });
+  };
+
+  // --- Selección de pasajeros del día ---
+  const togglePasajero = (nombre) => {
+    if (pasajerosDia.includes(nombre)) {
+      setPasajerosDia(pasajerosDia.filter(p => p !== nombre));
+    } else {
+      setPasajerosDia([...pasajerosDia, nombre]);
+    }
+  };
+
+  // --- Sugerir conductor según deudas ---
   useEffect(() => {
     if (pasajerosDia.length === 0) return;
-
     let maxDeuda = -1;
     let sugerido = pasajerosDia[0];
 
@@ -71,18 +102,22 @@ function App() {
     if (!conductorSugerido) return alert("Selecciona conductor");
 
     try {
-      // Actualizar deudas
+      // Actualizar deudas netas
       const nuevasDeudas = {...deudas};
       pasajerosDia.forEach(p => {
         if (p === conductorSugerido) return;
-        const clave = [p, conductorSugerido].sort().join("|");
-        const cantidad = nuevasDeudas[clave]?.cantidad || 0;
 
-        // Cancelar si se devuelve el viaje
-        if (conductorSugerido === p) return;
+        const clave = [p, conductorSugerido].sort().join("|");
+
+        // Si ya existe deuda, restamos para devolver viajes
         if (nuevasDeudas[clave]) {
-          nuevasDeudas[clave].cantidad = Math.max(0, nuevasDeudas[clave].cantidad - 1);
-          if (nuevasDeudas[clave].cantidad === 0) delete nuevasDeudas[clave];
+          const info = nuevasDeudas[clave];
+          if (info.deudor === conductorSugerido) {
+            // conductor devuelve deuda
+            delete nuevasDeudas[clave];
+          } else {
+            info.cantidad += 1;
+          }
         } else {
           nuevasDeudas[clave] = { deudor: p, cantidad: 1 };
         }
@@ -99,21 +134,13 @@ function App() {
       await setDoc(doc(db, "historial", "viajes"), { viajes: nuevoHistorial });
       setHistorial(nuevoHistorial);
 
-      // Reset pasajerosDia para siguiente día
+      // Limpiar selección del día
       setPasajerosDia([]);
 
-    } catch (error) {
-      console.error("Error al confirmar viaje:", error);
-      alert("Ha ocurrido un error al confirmar viaje.");
+    } catch (err) {
+      console.error("Error al confirmar viaje:", err);
+      alert("Error al confirmar viaje. Revisa la consola.");
     }
-  };
-
-  // --- Editar participantes ---
-  const eliminarParticipante = async (nombre) => {
-    if (!window.confirm(`¿Seguro que quieres eliminar a ${nombre}?`)) return;
-    const nuevaLista = participantes.filter(p => p !== nombre);
-    setParticipantes(nuevaLista);
-    await setDoc(doc(db, "participantes", "global"), { lista: nuevaLista });
   };
 
   return (
@@ -125,40 +152,64 @@ function App() {
           <button onClick={logout}>Salir</button>
           <h1>Gestión de Coche</h1>
 
-          <h2>Participantes</h2>
-          <ul>
-            {participantes.map(p => (
-              <li key={p}>
-                {p} <button onClick={() => eliminarParticipante(p)}>Eliminar</button>
-              </li>
-            ))}
-          </ul>
-
-          <h2>Pasajeros de hoy</h2>
-          {participantes.map(p => (
-            <label key={p}>
+          <div className="participantes-section">
+            <h2>Participantes</h2>
+            <div className="agregar-participante">
               <input
-                type="checkbox"
-                checked={pasajerosDia.includes(p)}
-                onChange={(e) => {
-                  if (e.target.checked)
-                    setPasajerosDia([...pasajerosDia, p]);
-                  else
-                    setPasajerosDia(pasajerosDia.filter(x => x !== p));
-                }}
+                type="text"
+                placeholder="Nombre del participante"
+                value={nuevoParticipante}
+                onChange={(e) => setNuevoParticipante(e.target.value)}
               />
-              {p}
-            </label>
-          ))}
+              <button onClick={agregarParticipante}>Agregar</button>
+            </div>
+
+            <ul>
+              {participantes.map(p => (
+                <li key={p}>
+                  {p} <button onClick={() => eliminarParticipante(p)}>Eliminar</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="pasajeros-section">
+            <h2>Pasajeros de hoy</h2>
+            {participantes.map(p => (
+              <label key={p}>
+                <input
+                  type="checkbox"
+                  checked={pasajerosDia.includes(p)}
+                  onChange={() => togglePasajero(p)}
+                />
+                {p}
+              </label>
+            ))}
+          </div>
 
           {pasajerosDia.length > 0 && (
             <div className="conductor-sugerido">
               <h2>Sugerencia de conductor: {conductorSugerido}</h2>
               <button onClick={confirmarViaje}>Confirmar viaje</button>
+
+              <div className="deudas-conductor">
+                <h3>Deudas del conductor con pasajeros de hoy:</h3>
+                <ul>
+                  {pasajerosDia.filter(p => p !== conductorSugerido).map(p => {
+                    const clave = [p, conductorSugerido].sort().join("|");
+                    const cantidad = deudas[clave]?.cantidad || 0;
+                    return (
+                      <li key={p}>
+                        {conductorSugerido} → {p}: {cantidad} viaje(s)
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </div>
           )}
 
-          <h2>Deudas</h2>
+          <h2>Deudas globales</h2>
           <table className="deudas-table">
             <thead>
               <tr>
