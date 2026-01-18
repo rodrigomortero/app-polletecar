@@ -1,269 +1,298 @@
-import { useEffect, useState } from "react";
-import "./App.css";
+// src/App.js
+import React, { useState, useEffect } from "react";
 import { auth, provider, db } from "./firebase";
-import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  onSnapshot,
+  deleteDoc,
+  query,
+  orderBy,
+  limit
+} from "firebase/firestore";
+import "./App.css";
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [participantes, setParticipantes] = useState([]);
-  const [pasajerosHoy, setPasajerosHoy] = useState([]);
+  const [participants, setParticipants] = useState([]);
+  const [selectedToday, setSelectedToday] = useState([]);
+  const [conductorSug, setConductorSug] = useState(null);
+  const [conductorConfirm, setConductorConfirm] = useState(null);
   const [deudas, setDeudas] = useState({});
-  const [viajes, setViajes] = useState([]);
-  const [logs, setLogs] = useState([]);
-  const [nuevoNombre, setNuevoNombre] = useState("");
-  const [conductorManual, setConductorManual] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(0);
-  const [editando, setEditando] = useState(null);
+  const [historial, setHistorial] = useState([]);
+  const [actividad, setActividad] = useState([]);
 
-  /* ========== AUTH ========== */
-
+  // ===== AUTH GOOGLE =====
   useEffect(() => {
-    onAuthStateChanged(auth, u => {
-      if (u) {
-        setUser(u);
-        cargarDatos(u.uid);
-      }
+    onAuthStateChanged(auth, (current) => {
+      setUser(current);
     });
   }, []);
 
-  const login = async () => await signInWithPopup(auth, provider);
-  const logout = async () => await signOut(auth);
-
-  /* ========== FIREBASE ========== */
-
-  const cargarDatos = async uid => {
-    const snap = await getDoc(doc(db, "datos", uid));
-    if (snap.exists()) {
-      const d = snap.data();
-      setParticipantes(d.participantes || []);
-      setDeudas(d.deudas || {});
-      setViajes(d.viajes || []);
-      setLogs(d.logs || []);
+  const login = async () => {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      console.error(e);
     }
+  };
+  const logout = async () => {
+    await signOut(auth);
+    setUser(null);
+  };
+
+  // ===== FIREBASE LOAD =====
+  useEffect(() => {
+    const unsubParticipants = onSnapshot(
+      collection(db, "participants"),
+      (snap) => {
+        setParticipants(snap.docs.map((d) => d.data().name));
+      }
+    );
+    const unsubDeudas = onSnapshot(doc(db, "data", "deudas"), (docSnap) => {
+      if (docSnap.exists()) setDeudas(docSnap.data());
+    });
+    const unsubHistorial = onSnapshot(
+      query(collection(db, "historial"), orderBy("fecha", "desc"), limit(20)),
+      (snap) => {
+        setHistorial(snap.docs.map((d) => d.data()));
+      }
+    );
+    const unsubActividad = onSnapshot(
+      query(collection(db, "actividad"), orderBy("fecha", "desc"), limit(50)),
+      (snap) => setActividad(snap.docs.map((d) => d.data()))
+    );
+
+    return () => {
+      unsubParticipants();
+      unsubDeudas();
+      unsubHistorial();
+      unsubActividad();
+    };
+  }, []);
+
+  // ===== PARTICIPANTS =====
+  const addParticipant = async () => {
+    const name = prompt("Nombre del participante:");
+    if (!name) return;
+    if (participants.includes(name)) {
+      alert("Ya existe");
+      return;
+    }
+    await setDoc(doc(db, "participants", name), { name });
+    await logActividad(`Añadido participante: ${name}`);
+  };
+
+  const removeParticipant = async (name) => {
+    if (!window.confirm(`Seguro quieres eliminar a ${name}?`)) return;
+    if (!window.confirm(`ESTÁS SEGURO DOS VECES de eliminar a ${name}?`)) return;
+    await deleteDoc(doc(db, "participants", name));
+    await logActividad(`Eliminado participante: ${name}`);
+  };
+
+  // ===== LOG ACTIVIDAD =====
+  const logActividad = async (accion) => {
+    if (!user) return;
+    await setDoc(doc(collection(db, "actividad")), {
+      usuario: user.displayName,
+      email: user.email,
+      accion,
+      fecha: new Date().toISOString(),
+    });
+  };
+
+  // ===== CALCULAR SUGERENCIA =====
+  const calcularConductor = () => {
+    if (selectedToday.length === 0) return null;
+    let maxDeuda = -Infinity;
+    let elegido = selectedToday[0];
+
+    selectedToday.forEach((p) => {
+      let deudaTotal = 0;
+      selectedToday.forEach((q) => {
+        if (p !== q) {
+          deudaTotal += deudas[p]?.[q] || 0;
+        }
+      });
+      if (deudaTotal > maxDeuda) {
+        maxDeuda = deudaTotal;
+        elegido = p;
+      }
+    });
+    setConductorSug(elegido);
   };
 
   useEffect(() => {
-    if (!user) return;
-    setDoc(doc(db, "datos", user.uid), {
-      participantes,
-      deudas,
-      viajes,
-      logs
-    });
-  }, [participantes, deudas, viajes, logs]);
+    calcularConductor();
+  }, [selectedToday, deudas]);
 
-  /* ========== LOG ========== */
-
-  const log = (accion, detalle) => {
-    setLogs(l => [{
-      usuario: user.email,
-      fecha: new Date().toLocaleString(),
-      accion,
-      detalle
-    }, ...l]);
-  };
-
-  /* ========== PARTICIPANTES ========== */
-
-  const agregarParticipante = () => {
-    if (!nuevoNombre.trim() || participantes.includes(nuevoNombre)) return;
-
-    setParticipantes(p => [...p, nuevoNombre]);
-    setDeudas(d => {
-      const n = structuredClone(d);
-      n[nuevoNombre] = {};
-      [...participantes, nuevoNombre].forEach(p => {
-        if (!n[p]) n[p] = {};
-        n[p][nuevoNombre] = 0;
-        n[nuevoNombre][p] = 0;
-      });
-      return n;
-    });
-
-    log("AÑADIR PARTICIPANTE", nuevoNombre);
-    setNuevoNombre("");
-  };
-
-  /* ========== SUGERENCIA ========== */
-
-  const sugerirConductor = () => {
-    let mejor = null;
-    let max = -Infinity;
-
-    pasajerosHoy.forEach(p => {
-      let deuda = 0;
-      pasajerosHoy.forEach(o => {
-        if (o !== p && deudas[o]?.[p] > 0) deuda += deudas[o][p];
-      });
-      if (deuda > max) {
-        max = deuda;
-        mejor = p;
-      }
-    });
-    return mejor;
-  };
-
-  const conductorFinal = conductorManual || sugerirConductor();
-
-  /* ========== CONFIRMAR VIAJE ========== */
-
-  const confirmarViaje = () => {
-    if (!conductorFinal || pasajerosHoy.length < 2) return;
-
-    const d = structuredClone(deudas);
-
-    pasajerosHoy.forEach(p => {
-      if (p !== conductorFinal) {
-        d[conductorFinal][p] += 1;
-        d[p][conductorFinal] -= 1;
-      }
-    });
-
-    const viaje = {
-      fecha: new Date().toLocaleDateString(),
-      conductor: conductorFinal,
-      pasajeros: pasajerosHoy
-    };
-
-    setDeudas(d);
-    setViajes(v => [viaje, ...v].slice(0, 20));
-    log("CONFIRMAR VIAJE", `Conductor ${conductorFinal}`);
-    setPasajerosHoy([]);
-    setConductorManual(null);
-  };
-
-  /* ========== EDITAR VIAJE ========== */
-
-  const guardarEdicion = (i, nuevo) => {
-    const v = viajes[i];
-    const d = structuredClone(deudas);
-
-    v.pasajeros.forEach(p => {
-      if (p !== v.conductor) {
-        d[v.conductor][p] -= 1;
-        d[p][v.conductor] += 1;
-      }
-      if (p !== nuevo) {
-        d[nuevo][p] += 1;
-        d[p][nuevo] -= 1;
-      }
-    });
-
-    const copia = [...viajes];
-    copia[i] = { ...v, conductor: nuevo };
-
-    setViajes(copia);
-    setDeudas(d);
-    log("EDITAR VIAJE", `Conductor ${v.conductor} → ${nuevo}`);
-    setEditando(null);
-  };
-
-  /* ========== RESET TOTAL ========== */
-
-  const resetTotal = () => {
-    if (confirmReset === 0) {
-      setConfirmReset(1);
-    } else if (confirmReset === 1) {
-      setParticipantes([]);
-      setDeudas({});
-      setViajes([]);
-      setLogs([]);
-      setConfirmReset(0);
-      log("RESET TOTAL", "Se borraron todos los datos");
+  // ===== CONFIRMAR VIAJE =====
+  const confirmarViaje = async () => {
+    if (!conductorConfirm && !conductorSug) {
+      alert("Selecciona conductor o usa la sugerencia");
+      return;
     }
+    const conductor = conductorConfirm || conductorSug;
+
+    // actualizar deudas
+    const nuevasDeudas = { ...deudas };
+    selectedToday.forEach((p) => {
+      if (p !== conductor) {
+        if (!nuevasDeudas[conductor]) nuevasDeudas[conductor] = {};
+        if (!nuevasDeudas[p]) nuevasDeudas[p] = {};
+        // compensar
+        const prev = nuevasDeudas[conductor][p] || 0;
+        const prev2 = nuevasDeudas[p][conductor] || 0;
+        nuevasDeudas[conductor][p] = prev + 1 + prev2 < 0 ? 0 : prev + 1 + prev2;
+        nuevasDeudas[p][conductor] = -nuevasDeudas[conductor][p];
+      }
+    });
+    await setDoc(doc(db, "data", "deudas"), nuevasDeudas);
+    setDeudas(nuevasDeudas);
+
+    // historial
+    const viaje = {
+      fecha: new Date().toISOString(),
+      conductor,
+      pasajeros: [...selectedToday],
+      quienConfirmo: user.displayName,
+    };
+    await setDoc(doc(collection(db, "historial")), viaje);
+
+    await logActividad(`Confirmado viaje por ${user.displayName}, conductor: ${conductor}`);
+    setConductorConfirm(null);
+    setSelectedToday([]);
   };
 
-  /* ========== UI ========== */
+  // ===== RESET TOTAL =====
+  const resetTotal = async () => {
+    if (!window.confirm("¿Seguro que quieres RESETear todo?")) return;
+    if (!window.confirm("¡CONFIRMACIÓN FINAL! Todo se borrará")) return;
 
-  if (!user) {
-    return (
-      <div className="login">
-        <h1>PolleteCar</h1>
-        <button onClick={login}>Entrar con Google</button>
-      </div>
-    );
-  }
+    // borrar participantes
+    const pDocs = await getDocs(collection(db, "participants"));
+    for (const d of pDocs.docs) await deleteDoc(d.ref);
+
+    // borrar deudas
+    await setDoc(doc(db, "data", "deudas"), {});
+
+    // borrar historial
+    const hDocs = await getDocs(collection(db, "historial"));
+    for (const d of hDocs.docs) await deleteDoc(d.ref);
+
+    await logActividad(`${user.displayName} ha reseteado TODO`);
+
+    setParticipants([]);
+    setDeudas({});
+    setHistorial([]);
+    setSelectedToday([]);
+    setConductorSug(null);
+    setConductorConfirm(null);
+  };
 
   return (
     <div className="app">
-      <header>
-        <h1>PolleteCar</h1>
-        <button onClick={logout}>Salir</button>
-      </header>
+      <h1>App Car Pool</h1>
+      {!user ? (
+        <button onClick={login}>Entrar con Google</button>
+      ) : (
+        <div>
+          <p>Hola, {user.displayName}</p>
+          <button onClick={logout}>Salir</button>
+        </div>
+      )}
 
-      <section className="card">
-        <h2>Participantes</h2>
-        <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} />
-        <button onClick={agregarParticipante}>Añadir</button>
-        {participantes.map(p => <div key={p}>{p}</div>)}
-      </section>
+      <h2>Participantes</h2>
+      <ul>
+        {participants.map((p) => (
+          <li key={p}>
+            {p}{" "}
+            <button onClick={() => removeParticipant(p)}>Eliminar</button>
+          </li>
+        ))}
+      </ul>
+      <button onClick={addParticipant}>Añadir participante</button>
 
-      <section className="card">
-        <h2>Pasajeros hoy</h2>
-        {participantes.map(p => (
-          <label key={p}>
-            <input type="checkbox" checked={pasajerosHoy.includes(p)}
-              onChange={() =>
-                setPasajerosHoy(h =>
-                  h.includes(p) ? h.filter(x => x !== p) : [...h, p]
-                )
-              } />
+      <h2>Pasajeros de hoy</h2>
+      {participants.map((p) => (
+        <label key={p}>
+          <input
+            type="checkbox"
+            checked={selectedToday.includes(p)}
+            onChange={(e) => {
+              if (e.target.checked)
+                setSelectedToday([...selectedToday, p]);
+              else setSelectedToday(selectedToday.filter((x) => x !== p));
+            }}
+          />
+          {p}
+        </label>
+      ))}
+
+      <h2>Sugerencia de conductor</h2>
+      <p>
+        {conductorSug || "No hay pasajeros seleccionados"}
+      </p>
+      <select
+        value={conductorConfirm || ""}
+        onChange={(e) => setConductorConfirm(e.target.value)}
+      >
+        <option value="">Usar sugerencia</option>
+        {selectedToday.map((p) => (
+          <option key={p} value={p}>
             {p}
-          </label>
+          </option>
         ))}
-      </section>
+      </select>
+      <button onClick={confirmarViaje}>Confirmar viaje</button>
+      <button onClick={resetTotal}>Reset total</button>
 
-      <section className="card">
-        <h2>Sugerencia</h2>
-        <strong>{conductorFinal || "—"}</strong>
-        <button onClick={confirmarViaje}>Confirmar viaje</button>
-      </section>
+      <h2>Deudas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>De</th>
+            {participants.map((p) => (
+              <th key={p}>{p}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {participants.map((p) => (
+            <tr key={p}>
+              <td>{p}</td>
+              {participants.map((q) => (
+                <td key={q}>
+                  {deudas[p]?.[q] || 0}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      <section className="card">
-        <h2>Deudas</h2>
-        {Object.entries(deudas).map(([a, o]) =>
-          Object.entries(o).map(([d, v]) =>
-            v > 0 && <div key={a + d}>{d} → {a}: {v}</div>
-          )
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Historial</h2>
-        {viajes.map((v, i) => (
-          <div key={i}>
-            {v.fecha} – {v.conductor}
-            {i < 5 && (
-              <>
-                {editando === i ? (
-                  participantes.map(p =>
-                    <button key={p} onClick={() => guardarEdicion(i, p)}>{p}</button>
-                  )
-                ) : (
-                  <button onClick={() => setEditando(i)}>Editar</button>
-                )}
-              </>
-            )}
-          </div>
+      <h2>Historial últimos 20 viajes</h2>
+      <ul>
+        {historial.map((v, idx) => (
+          <li key={idx}>
+            {new Date(v.fecha).toLocaleString()} - Conductor: {v.conductor} - Pasajeros: {v.pasajeros.join(", ")}
+          </li>
         ))}
-      </section>
+      </ul>
 
-      <section className="card">
-        <h2>Actividad</h2>
-        {logs.map((l, i) =>
-          <div key={i}>
-            [{l.fecha}] {l.usuario}: {l.accion} → {l.detalle}
-          </div>
-        )}
-      </section>
-
-      <section className="card danger">
-        <button onClick={resetTotal}>
-          {confirmReset === 0 && "Reset total"}
-          {confirmReset === 1 && "CONFIRMAR BORRADO TOTAL"}
-        </button>
-      </section>
+      <h2>Actividad reciente</h2>
+      <ul>
+        {actividad.map((a, idx) => (
+          <li key={idx}>
+            {new Date(a.fecha).toLocaleString()} - {a.usuario} ({a.email}) - {a.accion}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
