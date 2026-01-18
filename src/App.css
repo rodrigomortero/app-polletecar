@@ -1,38 +1,75 @@
-body {
-  font-family: system-ui, sans-serif;
-  background: #f4f6f8;
-  margin: 0;
-}
-
-.app {
+/* src/App.css */
+.app-container {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   max-width: 900px;
-  margin: auto;
-  padding: 1rem;
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card {
-  background: white;
-  padding: 1rem;
-  margin: 1rem 0;
+  margin: 0 auto;
+  padding: 15px;
+  background: #f3f3f3;
   border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
-.card h2 {
-  margin-top: 0;
+h1 {
+  text-align: center;
+  color: #2c3e50;
+}
+
+h2 {
+  margin-top: 20px;
+  color: #34495e;
 }
 
 button {
-  margin: 0.3rem;
-  padding: 0.4rem 0.7rem;
+  margin-left: 5px;
+  margin-right: 5px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
 }
 
-.danger button {
-  background: #c62828;
-  color: white;
+button:hover {
+  background-color: #2c3e50;
+  color: #fff;
+}
+
+input {
+  padding: 5px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.participants, .debts, .history, .buttons, .activity {
+  margin-bottom: 20px;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5px;
+}
+
+table, th, td {
+  border: 1px solid #ccc;
+}
+
+th, td {
+  padding: 5px;
+  text-align: left;
+}
+
+.suggestion {
+  font-weight: bold;
+  color: #e67e22;
+}
+
+.activity li {
+  font-size: 0.9em;
 }
